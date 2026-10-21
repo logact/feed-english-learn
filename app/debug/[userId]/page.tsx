@@ -1,5 +1,7 @@
 import { connection } from "next/server";
+import { notFound, redirect } from "next/navigation";
 import { getDefaultStorage } from "@/lib/engine/storage";
+import { getCurrentAccount } from "@/lib/session";
 import { effectiveState } from "@/lib/engine/knowledge";
 import { KNOWLEDGE_STATES, type KnowledgeState } from "@/contracts/knowledge";
 
@@ -22,6 +24,10 @@ export default async function DebugUserPage({
   await connection(); // better-sqlite3 同步驱动：声明按请求读取
   const { userId } = await params;
   const storage = getDefaultStorage();
+  const account = await getCurrentAccount(storage);
+  if (!account) redirect("/login");
+  if (account.userId !== userId) notFound();
+
   const now = storage.lastEventTs(userId) ?? new Date().toISOString();
 
   const profile = storage.getProfile(userId);

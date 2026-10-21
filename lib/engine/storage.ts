@@ -86,6 +86,20 @@ CREATE TABLE IF NOT EXISTS update_journal (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_journal_user ON update_journal(user_id, id);
+CREATE TABLE IF NOT EXISTS accounts (
+  user_id TEXT PRIMARY KEY,
+  email TEXT NOT NULL,
+  display_name TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_accounts_email ON accounts(email);
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
 `;
 
 export interface JournalEntry {
@@ -106,6 +120,20 @@ export interface KnowledgeRow extends KnowledgeItem {
   updatedAt: string;
 }
 
+export interface Account {
+  userId: string;
+  email: string;
+  displayName: string | null;
+  createdAt: string;
+}
+
+export interface AuthSession {
+  tokenHash: string;
+  userId: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
 export type DB = BetterSQLite3Database<typeof schema>;
 
 export interface Storage {
@@ -122,6 +150,14 @@ export interface Storage {
   saveProfile(profile: UserProfile): void;
   listSnapshots(userId: string): UserProfile[];
   listUserIds(): string[];
+
+  createAccount(account: Account): void;
+  getAccountByEmail(email: string): Account | null;
+  getAccountById(userId: string): Account | null;
+  updateAccountDisplayName(userId: string, displayName: string): void;
+  createAuthSession(session: AuthSession): void;
+  getAuthSession(tokenHash: string): AuthSession | null;
+  deleteAuthSession(tokenHash: string): void;
 
   getKnowledgeItem(userId: string, item: string): KnowledgeItem | null;
   upsertKnowledgeItem(userId: string, item: KnowledgeItem, updatedAt: string): void;
@@ -259,6 +295,44 @@ export function createStorage(dbPath: string = DEFAULT_DB_PATH): Storage {
         .from(schema.profiles)
         .all()
         .map((r) => r.userId);
+    },
+
+    createAccount(account) {
+      db.insert(schema.accounts).values(account).run();
+    },
+
+    getAccountByEmail(email) {
+      const rows = db.select().from(schema.accounts).where(eq(schema.accounts.email, email)).all();
+      return rows[0] ?? null;
+    },
+
+    getAccountById(userId) {
+      const rows = db.select().from(schema.accounts).where(eq(schema.accounts.userId, userId)).all();
+      return rows[0] ?? null;
+    },
+
+    updateAccountDisplayName(userId, displayName) {
+      db.update(schema.accounts)
+        .set({ displayName })
+        .where(eq(schema.accounts.userId, userId))
+        .run();
+    },
+
+    createAuthSession(session) {
+      db.insert(schema.authSessions).values(session).run();
+    },
+
+    getAuthSession(tokenHash) {
+      const rows = db
+        .select()
+        .from(schema.authSessions)
+        .where(eq(schema.authSessions.tokenHash, tokenHash))
+        .all();
+      return rows[0] ?? null;
+    },
+
+    deleteAuthSession(tokenHash) {
+      db.delete(schema.authSessions).where(eq(schema.authSessions.tokenHash, tokenHash)).run();
     },
 
     getKnowledgeItem(userId, item) {
@@ -413,6 +487,8 @@ export function createStorage(dbPath: string = DEFAULT_DB_PATH): Storage {
       db.delete(schema.knowledgeItems).where(eq(schema.knowledgeItems.userId, userId)).run();
       db.delete(schema.knowledgeChanges).where(eq(schema.knowledgeChanges.userId, userId)).run();
       db.delete(schema.updateJournal).where(eq(schema.updateJournal.userId, userId)).run();
+      db.delete(schema.authSessions).where(eq(schema.authSessions.userId, userId)).run();
+      db.delete(schema.accounts).where(eq(schema.accounts.userId, userId)).run();
     },
   };
 }

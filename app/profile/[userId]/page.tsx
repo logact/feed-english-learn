@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { connection } from "next/server";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getDefaultStorage } from "@/lib/engine/storage";
+import { getCurrentAccount } from "@/lib/session";
 import { effectiveState } from "@/lib/engine/knowledge";
 import { KNOWLEDGE_STATES, type KnowledgeState } from "@/contracts/knowledge";
 import styles from "./page.module.css";
@@ -23,6 +24,10 @@ export default async function ProfilePage({ params }: PageProps<"/profile/[userI
   await connection(); // better-sqlite3 同步驱动:声明按请求读取
   const { userId } = await params;
   const storage = getDefaultStorage();
+  const account = await getCurrentAccount(storage);
+  if (!account) redirect("/login");
+  if (account.userId !== userId) notFound();
+
   const profile = storage.getProfile(userId);
   if (!profile) notFound();
 
@@ -56,8 +61,8 @@ export default async function ProfilePage({ params }: PageProps<"/profile/[userI
     <main className={`container ${styles.page}`}>
       <header className={styles.header}>
         <div>
-          <p className="faint">个人档案</p>
-          <h1 className={styles.title}>{profile.user_id}</h1>
+          <p className="faint">个人档案 · {account.email}</p>
+          <h1 className={styles.title}>{account.displayName ?? account.email}</h1>
         </div>
         <span className={styles.bandBadge}>{rs.band}</span>
       </header>

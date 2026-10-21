@@ -3,6 +3,7 @@ import { z } from "zod";
 import { BandSchema, defaultProfile } from "@/contracts/profile";
 import { getDefaultStorage } from "@/lib/engine/storage";
 import { BAND_VOCAB } from "@/lib/band-vocab";
+import { getCurrentAccount } from "@/lib/session";
 
 // 重新测评:自评重置 reading_state,可选清空词汇账本
 // body: { band, interests?(≤12), reset_knowledge?(默认 false) }
@@ -18,6 +19,14 @@ export async function POST(
 ) {
   await connection();
   const { id } = await params;
+  const account = await getCurrentAccount();
+  if (!account) {
+    return NextResponse.json({ error: "请先登录" }, { status: 401 });
+  }
+  if (account.userId !== id) {
+    return NextResponse.json({ error: "无权访问该用户" }, { status: 403 });
+  }
+
   let body: unknown;
   try {
     body = await request.json();

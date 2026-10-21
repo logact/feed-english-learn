@@ -3,20 +3,26 @@ import { z } from "zod";
 import { BANDS, defaultProfile } from "@/contracts/profile";
 import { getDefaultStorage } from "@/lib/engine/storage";
 import { BAND_VOCAB } from "@/lib/band-vocab";
+import { getCurrentAccount } from "@/lib/session";
 
-// 新手引导建档:body { user_id, band, interests }
+// 新手引导建档:body { nickname, band, interests }
 const CreateUserSchema = z.object({
-  user_id: z
-    .string()
-    .min(1)
-    .max(64)
-    .regex(/^[a-z0-9][a-z0-9_-]*$/, "user_id 需为小写字母/数字/连字符"),
+  nickname: z.string().trim().min(1).max(40),
   band: z.enum(BANDS),
   interests: z.array(z.string().min(1).max(40)).max(12).default([]),
 });
 
 export async function POST(request: NextRequest) {
   await connection();
+  const storage = getDefaultStorage();
+  const account = await getCurrentAccount(storage);
+  if (!account) {
+    return NextResponse.json({ error: "请先登录" }, { status: 401 });
+  }
+  if (storage.getProfile(account.userId)) {
+    return NextResponse.json({ error: "当前账号已完成建档" }, { status: 409 });
+  }
+
   let body: unknown;
   try {
     body = await request.json();
@@ -30,15 +36,10 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
-  const { user_id, band, interests } = parsed.data;
-
-  const storage = getDefaultStorage();
-  if (storage.getProfile(user_id)) {
-    return NextResponse.json({ error: "这个 ID 已被使用" }, { status: 409 });
-  }
+  const { nickname, band, interests } = parsed.data;
 
   const now = new Date().toISOString();
-  const profile = defaultProfile(user_id, now);
+  const profile = defaultProfile(account.userId, now);
   profile.reading_state.band = band;
   profile.reading_state.vocab_estimate = BAND_VOCAB[band];
   profile.reading_state.confidence = 0.3;
@@ -49,6 +50,7 @@ export async function POST(request: NextRequest) {
     note: "onboarding 自选",
   }));
   storage.saveProfile(profile);
+  storage.updateAccountDisplayName(account.userId, nickname);
 
   return NextResponse.json(profile, { status: 201 });
 }

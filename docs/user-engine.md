@@ -25,11 +25,15 @@
 
 ## 存储（SQLite，data/engine.db）
 
-7 张表：events（append-only）、profiles、profile_snapshots（版本历史）、knowledge_items、knowledge_changes（含每个词的状态史）、materials、update_journal（每次 LLM 更新的 prompt 版本/模型/输入 digest/原始响应/delta）。启动时自动 CREATE TABLE IF NOT EXISTS；也可用 `pnpm db:push`（注意：push 要在 fresh db 上跑，或交给自动建表）。
+9 张表：events（append-only）、profiles、profile_snapshots（版本历史）、knowledge_items、knowledge_changes（含每个词的状态史）、materials、update_journal（每次 LLM 更新的 prompt 版本/模型/输入 digest/原始响应/delta）、accounts（邮箱账号）、auth_sessions（登录会话）。启动时自动 CREATE TABLE IF NOT EXISTS；也可用 `pnpm db:push`（注意：push 要在 fresh db 上跑，或交给自动建表）。
+
+## 邮箱登录
+
+`/login` 输入邮箱即可登录，不使用密码或邮箱验证码。邮箱规范化后唯一对应一个账号；新邮箱自动创建账号并进入 onboarding，已有档案则直接回到首页。会话有效期 30 天，浏览器保存 HttpOnly Cookie，数据库只保存 token 的 SHA-256 哈希。此方式不验证邮箱归属，仅适合轻量产品或演示环境。学习页面和用户 API 都会校验当前会话与 userId 的归属。
 
 ## 消费接口（给组件 2 材料生成引擎）
 
-`GET /api/users/[id]/target-spec` → band、length_words、topics、review_items（fading/supported 旧词重现清单）、new_item_budget、avoid_items、notes。
+`GET /api/users/[id]/target-spec` → band、length_words、topics、review_items（fading/supported 旧词重现清单）、new_item_budget、avoid_items、notes。调用时需携带当前账号的会话 Cookie，且 id 必须属于该账号。
 
 ## LLM 接入
 

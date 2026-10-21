@@ -97,3 +97,25 @@ export const updateJournal = sqliteTable(
   },
   (t) => [index("idx_journal_user").on(t.userId, t.id)],
 );
+
+export const accounts = sqliteTable(
+  "accounts",
+  {
+    userId: text("user_id").primaryKey(),
+    email: text("email").notNull(),
+    displayName: text("display_name"),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("uq_accounts_email").on(t.email)],
+);
+
+export const authSessions = sqliteTable(
+  "auth_sessions",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    userId: text("user_id").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("idx_auth_sessions_user").on(t.userId)],
+);

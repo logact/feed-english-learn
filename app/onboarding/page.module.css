@@ -52,16 +52,6 @@
   border-color: var(--accent);
 }
 
-.code {
-  font-family: var(--font-geist-mono);
-  font-size: 0.9em;
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-  padding: 2px 8px;
-  border-radius: 6px;
-  margin-left: 6px;
-}
-
 .bandGrid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
