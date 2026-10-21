@@ -63,7 +63,11 @@ export function buildSessionDigest(input: SessionDigestInput): string {
   }
   for (const f of feedbacks) {
     if (f.type === "feedback") {
-      lines.push(`feedback: ${f.sentiment}${f.topic ? `(topic=${f.topic})` : ""}`);
+      const attrs: string[] = [];
+      if (f.sentiment) attrs.push(f.sentiment);
+      if (f.topic) attrs.push(`topic=${f.topic}`);
+      if (f.difficulty) attrs.push(`difficulty=${f.difficulty}`);
+      lines.push(`feedback: ${attrs.join(" ")}`);
     }
   }
 

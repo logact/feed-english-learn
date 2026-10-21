@@ -88,6 +88,29 @@ describe("尺度 3：滞回 gate 与幅度约束", () => {
     expect(stageGate([dg(0.5), dg(0.8)])).toBe("hold"); // 不足 3 个
   });
 
+  const dgEasy = (density: number) =>
+    `lookup_density=${density.toFixed(2)}%\nfeedback: difficulty=too_easy`;
+  const dgHard = (density: number) =>
+    `lookup_density=${density.toFixed(2)}%\nfeedback: difficulty=too_hard`;
+
+  it("密度在目标区间但显式反馈同向 → 同样放行", () => {
+    expect(stageGate([dgEasy(3), dgEasy(2.5), dgEasy(4)])).toBe("up");
+    expect(stageGate([dgHard(2), dgHard(3), dgHard(4)])).toBe("down");
+  });
+
+  it("反馈方向不一致或未全员反馈 → hold", () => {
+    expect(stageGate([dgEasy(3), dgHard(3), dgEasy(3)])).toBe("hold");
+    expect(stageGate([dgEasy(3), dg(3), dgEasy(3)])).toBe("hold"); // 中间无反馈
+    expect(stageGate([dg(0.5), dg(0.5), dg(0.5).replace("other=1", "difficulty=too_easy")])).toBe(
+      "up", // 密度同向足够,反馈缺失不影响
+    );
+  });
+
+  it("密度与显式反馈矛盾 → hold", () => {
+    // 密度全员 <1%(说太易)但用户反馈「太难」:信号矛盾,不动
+    expect(stageGate([dgHard(0.5), dgHard(0.8), dgHard(0.2)])).toBe("hold");
+  });
+
   it("gate=hold 时 LLM 想调整也不生效", () => {
     const profile = defaultProfile("u", NOW);
     const r = applyStageReview(

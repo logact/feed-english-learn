@@ -65,8 +65,12 @@ export const FeedbackEventSchema = z.object({
   ...base,
   type: z.literal("feedback"),
   material_id: z.string(),
-  sentiment: z.enum(["like", "dislike"]),
+  sentiment: z.enum(["like", "dislike"]).optional(),
   topic: z.string().optional(),
+  difficulty: z
+    .enum(["too_easy", "just_right", "too_hard"])
+    .optional()
+    .describe("难度显式反馈;阶段检查滞回 gate 的辅助信号"),
 });
 
 export const ReadingEventSchema = z.discriminatedUnion("type", [

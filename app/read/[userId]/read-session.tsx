@@ -43,6 +43,9 @@ export default function ReadSession({
   const [knownMarked, setKnownMarked] = useState<Set<string>>(new Set());
   const [selection, setSelection] = useState<Selection | null>(null);
   const [feedbackSent, setFeedbackSent] = useState<"like" | "dislike" | null>(null);
+  const [difficultySent, setDifficultySent] = useState<
+    "too_easy" | "just_right" | "too_hard" | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
   const startedAtRef = useRef<number>(0);
 
@@ -70,6 +73,7 @@ export default function ReadSession({
     setLookedUp(new Map());
     setKnownMarked(new Set());
     setFeedbackSent(null);
+    setDifficultySent(null);
     setSelection(null);
     try {
       const res = await fetch(`/api/users/${userId}/materials`, { method: "POST" });
@@ -141,6 +145,17 @@ export default function ReadSession({
       material_id: material.material.material_id,
       sentiment,
       topic: material.material.topics[0],
+    });
+  }
+
+  // 难度显式反馈:阶段检查滞回 gate 的辅助信号(连续同向才放行)
+  function sendDifficulty(difficulty: "too_easy" | "just_right" | "too_hard") {
+    if (!material || difficultySent) return;
+    setDifficultySent(difficulty);
+    void sendEvent({
+      type: "feedback",
+      material_id: material.material.material_id,
+      difficulty,
     });
   }
 
@@ -334,6 +349,25 @@ export default function ReadSession({
           >
             不太适合我
           </button>
+        </div>
+        <div className={styles.feedbackRow}>
+          <span className="faint">难度合适吗?</span>
+          {(
+            [
+              ["too_easy", "太简单"],
+              ["just_right", "合适"],
+              ["too_hard", "太难"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              className={`btn btn-ghost ${difficultySent === value ? styles.feedbackActive : ""}`}
+              onClick={() => sendDifficulty(value)}
+              disabled={difficultySent !== null}
+            >
+              {label}
+            </button>
+          ))}
         </div>
         <div className={styles.finishRow}>
           <button className="btn btn-primary" onClick={() => finish(true)}>

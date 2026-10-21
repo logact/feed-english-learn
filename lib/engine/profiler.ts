@@ -129,15 +129,29 @@ export function applySessionUpdate(
 
 export type StageGate = "up" | "down" | "hold";
 
-/** 滞回 gate：最近 3 个 session 查词密度同向才放行对应方向 */
+/** 从 digest 文本解析用户的显式难度反馈（无反馈或「合适」记 null） */
+export function parseDifficultyVote(digest: string): "too_easy" | "too_hard" | null {
+  if (/difficulty=too_easy/.test(digest)) return "too_easy";
+  if (/difficulty=too_hard/.test(digest)) return "too_hard";
+  return null;
+}
+
+/** 滞回 gate:最近 3 个 session 查词密度同向,或显式难度反馈同向,才放行对应方向;两方向矛盾则 hold */
 export function stageGate(recentSessionDigests: string[]): StageGate {
-  const densities = recentSessionDigests
-    .slice(-HYSTERESIS_SESSIONS)
+  const recent = recentSessionDigests.slice(-HYSTERESIS_SESSIONS);
+  const densities = recent
     .map(parseLookupDensity)
     .filter((d): d is number => d !== null);
   if (densities.length < HYSTERESIS_SESSIONS) return "hold";
-  if (densities.every((d) => d < HYSTERESIS_UP_DENSITY)) return "up";
-  if (densities.every((d) => d > HYSTERESIS_DOWN_DENSITY)) return "down";
+  const votes = recent.map(parseDifficultyVote);
+  const allLowDensity = densities.every((d) => d < HYSTERESIS_UP_DENSITY);
+  const allHighDensity = densities.every((d) => d > HYSTERESIS_DOWN_DENSITY);
+  const allTooEasy = votes.every((v) => v === "too_easy");
+  const allTooHard = votes.every((v) => v === "too_hard");
+  const wantUp = allLowDensity || allTooEasy;
+  const wantDown = allHighDensity || allTooHard;
+  if (wantUp && !wantDown) return "up";
+  if (wantDown && !wantUp) return "down";
   return "hold";
 }
 
@@ -341,7 +355,7 @@ export async function runStageReview(
       scale: "stage_review",
       promptVersion: PROMPT_VERSIONS.stage,
       model: "none",
-      inputSummary: `gate=hold (recent densities not consistently <${HYSTERESIS_UP_DENSITY}% or >${HYSTERESIS_DOWN_DENSITY}%)`,
+      inputSummary: `gate=hold (recent densities not consistently <${HYSTERESIS_UP_DENSITY}% or >${HYSTERESIS_DOWN_DENSITY}%, and no consistent difficulty feedback)`,
       rawResponse: "",
       delta: { gate: { from: null, to: "hold" }, skipped_llm: { from: null, to: true } },
       usage: null,
