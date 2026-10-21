@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "user_id": {
+      "type": "string"
+    },
+    "band": {
+      "type": "string",
+      "enum": [
+        "A1",
+        "A2",
+        "B1",
+        "B2",
+        "C1",
+        "C2"
+      ],
+      "description": "整体难度锚点"
+    },
+    "length_words": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2,
+      "description": "篇幅区间"
+    },
+    "topics": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "兴趣按权重排序"
+    },
+    "review_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "new",
+              "supported",
+              "familiar",
+              "mastered",
+              "fading"
+            ]
+          },
+          "sample_context": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "item",
+          "state",
+          "sample_context"
+        ],
+        "additionalProperties": false
+      },
+      "description": "需重现的旧知识（fading/supported）"
+    },
+    "new_item_budget": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "允许引入的新词数（对应 95~98% 覆盖率）"
+    },
+    "avoid_items": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "new 状态且用户已显挫折的词，暂缓重现"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "generated_at": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "user_id",
+    "band",
+    "length_words",
+    "topics",
+    "review_items",
+    "new_item_budget",
+    "avoid_items",
+    "notes",
+    "generated_at"
+  ],
+  "additionalProperties": false
+}

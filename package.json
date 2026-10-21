@@ -1,0 +1,45 @@
+{
+  "name": "comprehensible-english",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "db:push": "drizzle-kit push",
+    "contracts:export": "tsx contracts/export-json-schema.ts",
+    "demo": "tsx sim/demo.ts",
+    "sim:personas": "tsx sim/runner.ts",
+    "sim:eval": "tsx sim/evaluate.ts",
+    "sim:tune": "tsx sim/tune.ts",
+    "sim:replay": "tsx sim/replay.ts",
+    "sim:gen": "tsx sim/gen-eval.ts",
+    "lexicon:build": ".venv-lexicon/bin/python scripts/build-lexicon.py"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "drizzle-orm": "^0.45.4",
+    "next": "16.4.2",
+    "openai": "^7.39.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "zod": "^4.6.7",
+    "zod-to-json-schema": "^3.25.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.11",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.2",
+    "tsx": "^4.23.15",
+    "typescript": "^5",
+    "vitest": "^5.0.5"
+  },
+  "packageManager": "pnpm@9.15.9"
+}

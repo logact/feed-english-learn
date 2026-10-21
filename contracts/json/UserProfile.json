@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "user_id": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "reading_state": {
+      "type": "object",
+      "properties": {
+        "band": {
+          "type": "string",
+          "enum": [
+            "A1",
+            "A2",
+            "B1",
+            "B2",
+            "C1",
+            "C2"
+          ],
+          "description": "整体水平，仅阶段检查（尺度3）可调整"
+        },
+        "vocab_estimate": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "description": "词汇量估计，仅阶段检查可调整"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "target_lookup_rate": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "目标查词率区间，对应 95~98% 覆盖率目标"
+        },
+        "comfortable_length_words": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "max_length_words": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reading_speed_wpm": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sessions_since_review": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "距上次阶段检查的 session 数"
+        },
+        "evidence": {
+          "type": "string",
+          "description": "LLM 必须写出的判断依据，引用 digest 中的具体数字"
+        }
+      },
+      "required": [
+        "band",
+        "vocab_estimate",
+        "confidence",
+        "target_lookup_rate",
+        "comfortable_length_words",
+        "max_length_words",
+        "reading_speed_wpm",
+        "sessions_since_review",
+        "evidence"
+      ],
+      "additionalProperties": false
+    },
+    "interests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string"
+          },
+          "weight": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "note": {
+            "type": "string",
+            "description": "兴趣的细微差别备注"
+          }
+        },
+        "required": [
+          "topic",
+          "weight",
+          "note"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "string",
+      "description": "LLM 维护的自由文本压缩记忆"
+    },
+    "updated_at": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "user_id",
+    "version",
+    "reading_state",
+    "interests",
+    "notes",
+    "updated_at"
+  ],
+  "additionalProperties": false
+}

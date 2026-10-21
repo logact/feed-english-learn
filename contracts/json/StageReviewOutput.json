@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "adjust": {
+      "type": "boolean",
+      "description": "是否调整 band / vocab_estimate"
+    },
+    "band": {
+      "type": "string",
+      "enum": [
+        "A1",
+        "A2",
+        "B1",
+        "B2",
+        "C1",
+        "C2"
+      ]
+    },
+    "vocab_estimate": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "evidence": {
+      "type": "string",
+      "description": "必须引用最近若干 session digest 的具体数字"
+    }
+  },
+  "required": [
+    "adjust",
+    "evidence"
+  ],
+  "additionalProperties": false
+}

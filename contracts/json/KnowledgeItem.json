@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "item": {
+      "type": "string"
+    },
+    "item_type": {
+      "type": "string",
+      "enum": [
+        "word",
+        "phrase"
+      ]
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "new",
+        "supported",
+        "familiar",
+        "mastered",
+        "fading"
+      ]
+    },
+    "lookup_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "exposure_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "first_seen": {
+      "type": "string"
+    },
+    "last_seen": {
+      "type": "string"
+    },
+    "last_lookup_ts": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "last_lookup_session": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "next_review": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "note": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sample_contexts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "最近 1-2 个出现句子，供生成引擎重现时参考"
+    }
+  },
+  "required": [
+    "item",
+    "item_type",
+    "state",
+    "lookup_count",
+    "exposure_count",
+    "first_seen",
+    "last_seen",
+    "last_lookup_ts",
+    "last_lookup_session",
+    "next_review",
+    "note",
+    "sample_contexts"
+  ],
+  "additionalProperties": false
+}

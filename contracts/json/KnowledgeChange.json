@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "user_id": {
+      "type": "string"
+    },
+    "session_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "item": {
+      "type": "string"
+    },
+    "from_state": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "new",
+            "supported",
+            "familiar",
+            "mastered",
+            "fading"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "to_state": {
+      "type": "string",
+      "enum": [
+        "new",
+        "supported",
+        "familiar",
+        "mastered",
+        "fading"
+      ]
+    },
+    "trigger": {
+      "type": "string",
+      "enum": [
+        "lookup",
+        "known",
+        "exposure",
+        "llm_annotation"
+      ]
+    },
+    "note": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "ts": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "user_id",
+    "session_id",
+    "item",
+    "from_state",
+    "to_state",
+    "trigger",
+    "note",
+    "ts"
+  ],
+  "additionalProperties": false
+}

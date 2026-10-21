@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "material_id": {
+      "type": "string"
+    },
+    "topics": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "difficulty": {
+      "type": "string",
+      "description": "难度描述，如 band 提示"
+    },
+    "length_words": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "summary": {
+      "type": "string",
+      "description": "正文摘要"
+    },
+    "text": {
+      "description": "正文全文（可选），用于知识点曝光记账",
+      "type": "string"
+    }
+  },
+  "required": [
+    "material_id",
+    "topics",
+    "difficulty",
+    "length_words",
+    "summary"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,160 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding-top: 48px;
+  padding-bottom: 80px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.title {
+  font-size: 26px;
+  font-weight: 600;
+}
+
+.bandBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  height: 72px;
+  padding: 0 14px;
+  border-radius: 20px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-family: var(--font-reading);
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.sectionTitle {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.subTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin-bottom: 4px;
+}
+
+.dl {
+  display: flex;
+  flex-direction: column;
+}
+
+.dlRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.dlRow:last-child {
+  border-bottom: none;
+}
+
+.dt {
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.dd {
+  font-size: 15px;
+  text-align: right;
+}
+
+.evidence {
+  border-top: 1px dashed var(--line);
+  padding-top: 14px;
+}
+
+.interestList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.interestRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.interestTopic {
+  min-width: 64px;
+}
+
+.weightBar {
+  flex: 1;
+  max-width: 240px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.weightFill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.interestNote {
+  font-size: 12px;
+}
+
+.stateGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.stateHead {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.stateWords {
+  font-size: 14px;
+  color: var(--ink-soft);
+  line-height: 1.8;
+}
+
+.notes {
+  font-family: var(--font-reading);
+  line-height: 1.8;
+  color: var(--ink-soft);
+  white-space: pre-wrap;
+}
+
+.links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.debugLink {
+  color: var(--ink-faint);
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

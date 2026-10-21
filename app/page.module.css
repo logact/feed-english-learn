@@ -1,0 +1,159 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding-top: 56px;
+  padding-bottom: 72px;
+}
+
+/* ---- 未注册时的产品介绍 ---- */
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 20px;
+  padding-top: 48px;
+}
+
+.heroTitle {
+  font-family: var(--font-reading);
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.heroText {
+  max-width: 34em;
+  color: var(--ink-soft);
+  font-size: 16px;
+}
+
+/* ---- 仪表盘 ---- */
+
+.dashHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dashTitle {
+  font-size: 26px;
+  font-weight: 600;
+}
+
+.bandBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 76px;
+  height: 76px;
+  padding: 0 14px;
+  border-radius: 20px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-family: var(--font-reading);
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.statsCard {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.statValue {
+  font-family: var(--font-reading);
+  font-size: 30px;
+  font-weight: 600;
+}
+
+.statLabel {
+  font-size: 13px;
+  color: var(--ink-faint);
+}
+
+.confidenceRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.confidenceBar {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.confidenceFill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.sectionTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin-bottom: 10px;
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.notes {
+  border-left: 3px solid var(--accent);
+  padding: 4px 0 4px 16px;
+  color: var(--ink-soft);
+  font-family: var(--font-reading);
+  font-size: 15px;
+  line-height: 1.8;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.switcher {
+  font-size: 13px;
+}
+
+.switchLink {
+  margin-left: 10px;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 600px) {
+  .heroTitle {
+    font-size: 30px;
+  }
+
+  .statValue {
+    font-size: 24px;
+  }
+}

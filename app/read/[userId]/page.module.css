@@ -1,0 +1,204 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  padding-top: 56px;
+  padding-bottom: 80px;
+}
+
+.startCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.startTitle {
+  font-family: var(--font-reading);
+  font-size: 28px;
+  font-weight: 600;
+}
+
+.error {
+  color: var(--danger);
+  font-size: 14px;
+}
+
+.backLink {
+  color: var(--ink-faint);
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 3px solid var(--line);
+  border-top-color: var(--accent);
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---- 总结屏 ---- */
+
+.newItems {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-self: stretch;
+}
+
+.newItemsTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chipKnown {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.summaryActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* ---- 阅读视图 ---- */
+
+.readerPage {
+  width: 100%;
+  max-width: 65ch;
+  margin: 0 auto;
+  padding: 40px 24px 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.readerHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.article {
+  font-family: var(--font-reading);
+  font-size: 19px;
+  line-height: 1.8;
+  color: var(--ink);
+}
+
+.paragraph {
+  margin-bottom: 1.4em;
+}
+
+.word {
+  display: inline;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background 0.12s ease;
+}
+
+@media (hover: hover) {
+  .word:hover {
+    background: var(--accent-soft);
+  }
+}
+
+.wordLooked {
+  text-decoration: underline dotted var(--accent);
+  text-underline-offset: 4px;
+}
+
+.wordKnown {
+  background: var(--accent-soft);
+  text-decoration: none;
+}
+
+/* ---- 查词浮层(移动端落为底部抽屉) ---- */
+
+.popover {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  width: min(520px, calc(100vw - 32px));
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 20;
+}
+
+.popoverLemma {
+  font-family: var(--font-reading);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.popoverSentence {
+  font-family: var(--font-reading);
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--ink-soft);
+}
+
+.popoverActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* ---- 底部操作区 ---- */
+
+.readerFooter {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 24px;
+}
+
+.feedbackRow,
+.finishRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.finishRow {
+  justify-content: space-between;
+}
+
+.feedbackActive {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
