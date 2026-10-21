@@ -1,0 +1,151 @@
+# Build in CI and deploy a Next.js standalone bundle to the remote server.
+# The server only extracts the bundle and restarts it under pm2; it does not
+# need git, pnpm, or a production build.
+#
+# Required GitHub Actions secrets:
+#   DEPLOY_HOST    - server hostname or IP
+#   DEPLOY_USER    - SSH user
+#   DEPLOY_SSH_KEY - private SSH key allowed on the server
+#   DEPLOY_APP_DIR - absolute application path on the server
+# Optional secrets:
+#   DEPLOY_PORT       - SSH port, defaults to 22
+#   DEPLOY_APP_PORT   - health-check port, defaults to 3002; keep it in sync
+#                       with ecosystem.config.js
+#   LLM_API_KEY       - enables the OpenAI-compatible LLM client
+#   LLM_BASE_URL / LLM_MODEL / LLM_RESPONSE_FORMAT - optional LLM settings
+#
+# One-time server setup: Node.js >= 22.13 and pm2 (`npm i -g pm2`, then
+# `pm2 startup`). Create /var/lib/comprehensible-english and give DEPLOY_USER
+# write access. The SQLite database and LLM env file survive deployments there.
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Test and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+
+      - run: pnpm typecheck
+
+      - run: pnpm test
+
+      - run: pnpm build
+
+      - name: Package standalone bundle
+        run: |
+          mkdir -p .next/standalone/.next
+          cp -r .next/static .next/standalone/.next/static
+          cp -r public .next/standalone/public
+          cp ecosystem.config.js .next/standalone/ecosystem.config.js
+          tar czf "$GITHUB_WORKSPACE/release.tar.gz" -C "$GITHUB_WORKSPACE/.next/standalone" .
+          ls -lh "$GITHUB_WORKSPACE/release.tar.gz"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: release.tar.gz
+          retention-days: 7
+
+  deploy:
+    name: Deploy to remote server
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+
+      - name: Load SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Upload and activate on the server
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_APP_DIR: ${{ secrets.DEPLOY_APP_DIR }}
+          DEPLOY_APP_PORT: ${{ secrets.DEPLOY_APP_PORT }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          LLM_RESPONSE_FORMAT: ${{ secrets.LLM_RESPONSE_FORMAT }}
+        run: |
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_APP_DIR; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name secret is not set. Add it under Settings -> Secrets and variables -> Actions."
+              exit 1
+            fi
+          done
+          SSH="ssh -o StrictHostKeyChecking=accept-new -p ${DEPLOY_PORT:-22} ${DEPLOY_USER}@${DEPLOY_HOST}"
+          scp -o StrictHostKeyChecking=accept-new -P "${DEPLOY_PORT:-22}" \
+            release.tar.gz "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/comprehensible-english-release.tar.gz"
+          $SSH "APP_DIR='${DEPLOY_APP_DIR}' APP_PORT='${DEPLOY_APP_PORT:-3002}' LLM_API_KEY='${LLM_API_KEY}' LLM_BASE_URL='${LLM_BASE_URL}' LLM_MODEL='${LLM_MODEL}' LLM_RESPONSE_FORMAT='${LLM_RESPONSE_FORMAT}'" 'bash -se' <<'REMOTE_EOF'
+          set -u
+          DATA_DIR=/var/lib/comprehensible-english
+          mkdir -p "$DATA_DIR" || {
+            echo "::error::cannot create $DATA_DIR — create it and give the deploy user write access."
+            exit 1
+          }
+          if [ -n "${LLM_API_KEY}" ]; then
+            umask 077
+            {
+              printf 'LLM_API_KEY=%s\n' "${LLM_API_KEY}"
+              [ -n "${LLM_BASE_URL}" ] && printf 'LLM_BASE_URL=%s\n' "${LLM_BASE_URL}"
+              [ -n "${LLM_MODEL}" ] && printf 'LLM_MODEL=%s\n' "${LLM_MODEL}"
+              [ -n "${LLM_RESPONSE_FORMAT}" ] && printf 'LLM_RESPONSE_FORMAT=%s\n' "${LLM_RESPONSE_FORMAT}"
+            } > "$DATA_DIR/comprehensible-english.env"
+            chmod 600 "$DATA_DIR/comprehensible-english.env"
+            echo "Wrote $DATA_DIR/comprehensible-english.env from GitHub secrets."
+          else
+            echo "::warning::LLM_API_KEY secret is not set — leaving any existing env file untouched; the app will use its mock LLM client."
+          fi
+          mkdir -p "$APP_DIR"
+          find "$APP_DIR" -mindepth 1 -delete
+          tar xzf /tmp/comprehensible-english-release.tar.gz -C "$APP_DIR"
+          rm -f /tmp/comprehensible-english-release.tar.gz
+          cd "$APP_DIR"
+          pm2 delete comprehensible-english > /dev/null 2>&1 || true
+          pm2 start ecosystem.config.js
+          pm2 save
+          healthy=""
+          for i in $(seq 1 30); do
+            if curl -sf "http://localhost:${APP_PORT}/" > /dev/null 2>&1; then
+              healthy="yes"
+              break
+            fi
+            sleep 1
+          done
+          if [ -z "$healthy" ]; then
+            echo "::error::Health check failed: app did not respond on :${APP_PORT}"
+            pm2 logs comprehensible-english --lines 30 --nostream || true
+            exit 1
+          fi
+          echo "Deployed and healthy on :${APP_PORT}."
+          REMOTE_EOF
