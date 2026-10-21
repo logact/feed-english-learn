@@ -49,6 +49,8 @@ jobs:
 
       - run: pnpm lint
 
+      - run: pnpm exec next typegen
+
       - run: pnpm typecheck
 
       - run: pnpm test
