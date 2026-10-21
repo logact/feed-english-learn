@@ -7,7 +7,7 @@ module.exports = {
         "--env-file-if-exists=/var/lib/comprehensible-english/comprehensible-english.env",
       env: {
         NODE_ENV: "production",
-        PORT: 3002,
+        PORT: 3003,
         HOSTNAME: "0.0.0.0",
         ENGINE_DB_PATH: "/var/lib/comprehensible-english/engine.db",
       },

@@ -9,7 +9,7 @@
 #   DEPLOY_APP_DIR - absolute application path on the server
 # Optional secrets:
 #   DEPLOY_PORT       - SSH port, defaults to 22
-#   DEPLOY_APP_PORT   - health-check port, defaults to 3002; keep it in sync
+#   DEPLOY_APP_PORT   - health-check port, defaults to 3003; keep it in sync
 #                       with ecosystem.config.js
 #   LLM_API_KEY       - enables the OpenAI-compatible LLM client
 #   LLM_BASE_URL / LLM_MODEL / LLM_RESPONSE_FORMAT - optional LLM settings
@@ -108,7 +108,7 @@ jobs:
           SSH="ssh -o StrictHostKeyChecking=accept-new -p ${DEPLOY_PORT:-22} ${DEPLOY_USER}@${DEPLOY_HOST}"
           scp -o StrictHostKeyChecking=accept-new -P "${DEPLOY_PORT:-22}" \
             release.tar.gz "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/comprehensible-english-release.tar.gz"
-          $SSH "APP_DIR='${DEPLOY_APP_DIR}' APP_PORT='${DEPLOY_APP_PORT:-3002}' LLM_API_KEY='${LLM_API_KEY}' LLM_BASE_URL='${LLM_BASE_URL}' LLM_MODEL='${LLM_MODEL}' LLM_RESPONSE_FORMAT='${LLM_RESPONSE_FORMAT}'" 'bash -se' <<'REMOTE_EOF'
+          $SSH "APP_DIR='${DEPLOY_APP_DIR}' APP_PORT='${DEPLOY_APP_PORT:-3003}' LLM_API_KEY='${LLM_API_KEY}' LLM_BASE_URL='${LLM_BASE_URL}' LLM_MODEL='${LLM_MODEL}' LLM_RESPONSE_FORMAT='${LLM_RESPONSE_FORMAT}'" 'bash -se' <<'REMOTE_EOF'
           set -u
           DATA_DIR=/var/lib/comprehensible-english
           mkdir -p "$DATA_DIR" || {
