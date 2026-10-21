@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { GeneratedMaterial } from "@/contracts/generator";
+import { createSessionId } from "@/lib/session-id";
 import styles from "./page.module.css";
 
 type Phase = "idle" | "generating" | "reading" | "closing" | "done" | "error";
@@ -74,7 +75,7 @@ export default function ReadSession({
       const res = await fetch(`/api/users/${userId}/materials`, { method: "POST" });
       if (!res.ok) throw new Error(`生成失败 (${res.status})`);
       const gm = (await res.json()) as GeneratedMaterial;
-      const sid = crypto.randomUUID();
+      const sid = createSessionId();
       setSessionId(sid);
       setMaterial(gm);
       startedAtRef.current = Date.now();
