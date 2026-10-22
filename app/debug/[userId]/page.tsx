@@ -37,6 +37,15 @@ export default async function DebugUserPage({
     .map((it) => ({ ...it, effective_state: effectiveState(it, now) as KnowledgeState }));
   const journal = storage.listJournal(userId);
   const changes = storage.listKnowledgeChanges(userId);
+  const llmCalls = storage.listLLMCalls(userId);
+  const llmRecent = llmCalls.slice(-50).reverse();
+  const llmTotals = {
+    promptTokens: llmCalls.reduce((s, c) => s + (c.promptTokens ?? 0), 0),
+    completionTokens: llmCalls.reduce((s, c) => s + (c.completionTokens ?? 0), 0),
+    costUsd: llmCalls.reduce((s, c) => s + (c.costUsd ?? 0), 0),
+    latencyMs: llmCalls.reduce((s, c) => s + c.latencyMs, 0),
+    errors: llmCalls.filter((c) => c.status === "error").length,
+  };
 
   const byState = new Map<KnowledgeState, typeof items>();
   for (const s of KNOWLEDGE_STATES) byState.set(s, []);
@@ -136,6 +145,38 @@ export default async function DebugUserPage({
             <pre style={{ whiteSpace: "pre-wrap" }}>{j.inputSummary}</pre>
             <h4>raw LLM response</h4>
             <pre style={{ whiteSpace: "pre-wrap" }}>{j.rawResponse || "(none)"}</pre>
+          </details>
+        ))}
+      </section>
+
+      <section style={box}>
+        <h2>LLM Calls ({llmCalls.length})</h2>
+        <p>
+          tokens: prompt={llmTotals.promptTokens} completion={llmTotals.completionTokens} · cost=
+          ${llmTotals.costUsd.toFixed(4)} · latency={llmTotals.latencyMs}ms · errors=
+          {llmTotals.errors}
+        </p>
+        {llmRecent.map((c) => (
+          <details key={c.id} style={{ marginBottom: 8 }}>
+            <summary>
+              #{c.id} {c.createdAt.slice(0, 19)} <b>{c.scale}</b>
+              {c.turn !== null ? ` turn=${c.turn}` : ""} {c.schemaName} model={c.model} tokens=
+              {(c.promptTokens ?? 0) + (c.completionTokens ?? 0)} latency={c.latencyMs}ms
+              {c.costUsd !== null ? ` cost=$${c.costUsd.toFixed(6)}` : ""}{" "}
+              <b style={{ color: c.status === "error" ? "#c00" : "#080" }}>{c.status}</b>
+            </summary>
+            {c.error ? (
+              <>
+                <h4>error</h4>
+                <pre style={{ whiteSpace: "pre-wrap", color: "#c00" }}>{c.error}</pre>
+              </>
+            ) : null}
+            <h4>messages</h4>
+            <pre style={{ whiteSpace: "pre-wrap" }}>
+              {JSON.stringify(JSON.parse(c.messages), null, 2)}
+            </pre>
+            <h4>raw response</h4>
+            <pre style={{ whiteSpace: "pre-wrap" }}>{c.rawResponse || "(none)"}</pre>
           </details>
         ))}
       </section>

@@ -186,6 +186,7 @@ export async function generateMaterial(
       schemaName: "GeneratorTurn",
       schema: GeneratorTurnResponseSchema,
       messages,
+      trace: { userId, scale: "generate", promptVersion: PROMPT_VERSIONS.generate, turn: t },
     });
     lastRaw = result.raw;
     lastModel = result.model;

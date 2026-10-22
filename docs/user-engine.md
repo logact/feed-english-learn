@@ -25,7 +25,16 @@
 
 ## 存储（SQLite，data/engine.db）
 
-9 张表：events（append-only）、profiles、profile_snapshots（版本历史）、knowledge_items、knowledge_changes（含每个词的状态史）、materials、update_journal（每次 LLM 更新的 prompt 版本/模型/输入 digest/原始响应/delta）、accounts（邮箱账号）、auth_sessions（登录会话）。启动时自动 CREATE TABLE IF NOT EXISTS；也可用 `pnpm db:push`（注意：push 要在 fresh db 上跑，或交给自动建表）。
+10 张表：events（append-only）、profiles、profile_snapshots（版本历史）、knowledge_items、knowledge_changes（含每个词的状态史）、materials、update_journal（每次 LLM 更新的 prompt 版本/模型/输入 digest/原始响应/delta）、llm_calls（每次 LLM 调用的完整输入 messages/原始响应/token/延迟/估算成本/错误，重试合并为一条）、accounts（邮箱账号）、auth_sessions（登录会话）。启动时自动 CREATE TABLE IF NOT EXISTS；也可用 `pnpm db:push`（注意：push 要在 fresh db 上跑，或交给自动建表）。
+
+## 日志与 LLM 观测
+
+pino（`lib/logger.ts`）：stdout + 文件双写，LLM 调用单独再落一份 JSONL。`createEngine()` 用 `withLLMTracing`（`lib/engine/llm-trace.ts`）在 `complete()` 层统一包装，每次调用双写 `llm_calls` 表 + 日志文件，日志/落库失败不影响主流程。相关 env：
+
+- `LOG_LEVEL`（默认 `info`）
+- `LOG_FILE`（默认 `data/app.log`）
+- `LLM_LOG_FILE`（默认 `data/llm-calls.jsonl`）
+- `LLM_PRICE_INPUT_PER_MTOK` / `LLM_PRICE_OUTPUT_PER_MTOK`：单价覆盖（美元/1M token），供内置价格表之外的自建端点模型估算成本
 
 ## 邮箱登录
 
@@ -51,5 +60,5 @@
 
 ## 调试
 
-- `/debug` → `/debug/[userId]`：profile 当前值与版本历史、知识点按状态分组、知识点状态史、journal 时间线（digest/原始响应/delta）。
+- `/debug` → `/debug/[userId]`：profile 当前值与版本历史、知识点按状态分组、知识点状态史、journal 时间线（digest/原始响应/delta）、LLM 调用区块（汇总 + 最近 50 条明细，messages/raw 可展开）。
 - `pnpm demo`：Mock 下全流程闭环演示。

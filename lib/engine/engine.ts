@@ -20,6 +20,7 @@ import {
 } from "./generator";
 import { createStorage, getDefaultStorage, type Storage } from "./storage";
 import { createLLMClient, type LLMClient } from "./llm";
+import { isLLMTraced, withLLMTracing } from "./llm-trace";
 
 export interface EngineOptions {
   storage?: Storage;
@@ -54,7 +55,9 @@ function firstSentenceWith(text: string, lemma: string): string | undefined {
 
 export function createEngine(opts: EngineOptions = {}): Engine {
   const storage = opts.storage ?? getDefaultStorage();
-  const llm = opts.llm ?? createLLMClient();
+  const rawLlm = opts.llm ?? createLLMClient();
+  // 在 complete 层统一包装追踪：API 路由与 sim 脚本全部自动覆盖（replay 复用已包装的客户端时不再重复包）
+  const llm = isLLMTraced(rawLlm) ? rawLlm : withLLMTracing(rawLlm, storage);
   const tuning = opts.tuning ?? {};
 
   function applyKnowledgeEvent(

@@ -235,9 +235,17 @@ export interface LLMClient {
 
 引擎其余部分只依赖 `LLMClient` 接口 —— 测试和仿真的确定性由此而来。
 
+### 9.1 调用追踪 `lib/engine/llm-trace.ts`
+
+`createEngine()` 在 `complete()` 层（全部 LLM 流量的唯一 chokepoint）用 `withLLMTracing` 统一包装：每次调用**双写** —— SQLite `llm_calls` 表（含完整 messages/raw、token、延迟、估算成本、错误；重试合并为一条）+ pino 结构化日志。调用点通过 `LLMRequest.trace`（可选）带上 userId/sessionId/scale/turn 上下文。成本由 token 数 × 单价表估算，未知模型可用 env `LLM_PRICE_INPUT_PER_MTOK` / `LLM_PRICE_OUTPUT_PER_MTOK` 配置。
+
+### 9.2 日志 `lib/logger.ts`
+
+pino，stdout + 文件双写（`LOG_FILE`，默认 `data/app.log`），级别由 `LOG_LEVEL` 控制（默认 info）。LLM 调用单独再落一份 JSONL（`LLM_LOG_FILE`，默认 `data/llm-calls.jsonl`），便于采集。单例挂 `globalThis`（HMR 安全，同 `getDefaultStorage` 模式），不用 pino transport（worker thread 与 Next bundling 有坑），文件写走 `pino.destination()`。不依赖 Next.js，sim 脚本同样可用。两个触发 LLM 的 API 路由（events / materials）用 child logger 记录请求开始/结束/错误，与 `llm_calls` 可通过 user_id + 时间窗关联。
+
 ## 10. 存储 `lib/engine/storage.ts`
 
-SQLite(better-sqlite3 + drizzle),9 张表:
+SQLite(better-sqlite3 + drizzle),10 张表:
 
 | 表 | 内容 |
 |---|---|
@@ -246,6 +254,7 @@ SQLite(better-sqlite3 + drizzle),9 张表:
 | `knowledge_items` + `knowledge_changes` | 词汇账本 + 每个词的状态史(含触发源) |
 | `materials` | 生成的材料(含正文) |
 | `update_journal` | 每次 LLM 更新的完整审计 |
+| `llm_calls` | 每次 LLM 调用的观测记录(输入 messages/原始响应/token/延迟/成本/错误) |
 | `accounts` | 规范化邮箱、用户 ID 与显示昵称 |
 | `auth_sessions` | 会话 token 哈希、归属用户与过期时间 |
 
@@ -272,7 +281,7 @@ API 是引擎的薄壳:
 - `/login` 单邮箱登录;`/onboarding` 完成昵称、水平与兴趣设置;会话有效期 30 天,Cookie 为 HttpOnly,数据库不保存原始 token。
 - `/` 当前账号仪表盘(server component 通过 `getCurrentAccount()` 读取会话;`export const instant = false` 用于 cacheComponents 模式下的动态页)。
 - `/read/[userId]` 阅读界面 → `/profile/[userId]` 档案 → `/reassess/[userId]` 重新测评,均校验账号归属。
-- `/debug/[userId]` 当前账号的引擎内部可视化(profile 版本史、知识点分组、journal 时间线)。
+- `/debug/[userId]` 当前账号的引擎内部可视化(profile 版本史、知识点分组、journal 时间线、LLM 调用明细与成本汇总)。
 
 **阅读界面 `app/read/[userId]/read-session.tsx`** 是事件流的来源,状态机
 `idle → generating → reading → closing → done`:
@@ -308,4 +317,4 @@ API 是引擎的薄壳:
 
 ## 14. 测试布局 `tests/`
 
-重点是**纯函数**:`knowledge.test.ts`(状态机全迁移)、`clamp.test.ts`(clamp/gate)、`digest.test.ts`、`generator.test.ts`(验收闸门)、`llm.test.ts`(重试/Mock/客户端选择)、`contracts.test.ts`(schema)、`replay.test.ts`、`profiler.test.ts`。运行 `pnpm test`。
+重点是**纯函数**:`knowledge.test.ts`(状态机全迁移)、`clamp.test.ts`(clamp/gate)、`digest.test.ts`、`generator.test.ts`(验收闸门)、`llm.test.ts`(重试/Mock/客户端选择)、`llm-trace.test.ts`(成本估算/追踪双写/生成器每 turn 一条)、`contracts.test.ts`(schema)、`replay.test.ts`、`profiler.test.ts`。运行 `pnpm test`。

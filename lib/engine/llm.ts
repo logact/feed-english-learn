@@ -16,11 +16,21 @@ export interface LLMMessage {
   content: string;
 }
 
+/** 调用上下文（可选）：由调用点补充，withLLMTracing 落库/落日志用 */
+export interface LLMTraceContext {
+  userId?: string;
+  sessionId?: string;
+  scale?: string;
+  promptVersion?: string;
+  turn?: number;
+}
+
 export interface LLMRequest<T> {
   /** 逻辑契约名，Mock 客户端按它分派启发式行为，journal 也记录 */
   schemaName: string;
   schema: ZodType<T>;
   messages: LLMMessage[];
+  trace?: LLMTraceContext;
 }
 
 export interface TokenUsage {
