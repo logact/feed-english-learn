@@ -9,9 +9,13 @@ export const events = sqliteTable(
     type: text("type").notNull(),
     ts: text("ts").notNull(),
     payload: text("payload").notNull(), // 完整事件 JSON
+    eventId: text("event_id"), // 客户端幂等键，可空；唯一索引见 uq_events_event_id
     createdAt: text("created_at").notNull(),
   },
-  (t) => [index("idx_events_user").on(t.userId, t.sessionId)],
+  (t) => [
+    index("idx_events_user").on(t.userId, t.sessionId),
+    uniqueIndex("uq_events_event_id").on(t.eventId),
+  ],
 );
 
 export const profiles = sqliteTable("profiles", {

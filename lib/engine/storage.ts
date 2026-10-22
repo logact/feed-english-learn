@@ -19,9 +19,11 @@ CREATE TABLE IF NOT EXISTS events (
   type TEXT NOT NULL,
   ts TEXT NOT NULL,
   payload TEXT NOT NULL,
+  event_id TEXT,
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_events_user ON events(user_id, session_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_events_event_id ON events(event_id);
 CREATE TABLE IF NOT EXISTS profiles (
   user_id TEXT PRIMARY KEY,
   version INTEGER NOT NULL,
@@ -140,8 +142,12 @@ export interface Storage {
   db: DB;
   sqlite: Database.Database;
   close(): void;
+  /** 同步事务：fn 抛错则整体回滚（better-sqlite3 单连接，嵌套自动转 savepoint） */
+  transaction<T>(fn: () => T): T;
 
   insertEvent(ev: ReadingEvent): void;
+  hasEventId(eventId: string): boolean;
+  hasSessionEnd(userId: string, sessionId: string): boolean;
   listEvents(userId: string): ReadingEvent[];
   listSessionEvents(userId: string, sessionId: string): ReadingEvent[];
   lastEventTs(userId: string): string | null;
@@ -199,13 +205,20 @@ export function createStorage(dbPath: string = DEFAULT_DB_PATH): Storage {
   const sqlite = new Database(dbPath);
   sqlite.pragma("journal_mode = WAL");
   sqlite.exec(DDL);
+  // 旧库迁移：events 缺 event_id 列时补上（唯一索引对新旧库均幂等）
+  const eventCols = sqlite.prepare("PRAGMA table_info(events)").all() as { name: string }[];
+  if (!eventCols.some((c) => c.name === "event_id")) {
+    sqlite.exec("ALTER TABLE events ADD COLUMN event_id TEXT");
+  }
   const db = drizzle(sqlite, { schema });
   const now = () => new Date().toISOString();
+  const tx = <T>(fn: () => T): T => sqlite.transaction(fn)();
 
   return {
     db,
     sqlite,
     close: () => sqlite.close(),
+    transaction: tx,
 
     insertEvent(ev) {
       db.insert(schema.events)
@@ -215,9 +228,36 @@ export function createStorage(dbPath: string = DEFAULT_DB_PATH): Storage {
           type: ev.type,
           ts: ev.ts,
           payload: JSON.stringify(ev),
+          eventId: ev.event_id ?? null,
           createdAt: now(),
         })
         .run();
+    },
+
+    hasEventId(eventId) {
+      const rows = db
+        .select({ id: schema.events.id })
+        .from(schema.events)
+        .where(eq(schema.events.eventId, eventId))
+        .limit(1)
+        .all();
+      return rows.length > 0;
+    },
+
+    hasSessionEnd(userId, sessionId) {
+      const rows = db
+        .select({ id: schema.events.id })
+        .from(schema.events)
+        .where(
+          and(
+            eq(schema.events.userId, userId),
+            eq(schema.events.sessionId, sessionId),
+            eq(schema.events.type, "session_end"),
+          ),
+        )
+        .limit(1)
+        .all();
+      return rows.length > 0;
     },
 
     listEvents(userId) {
@@ -257,26 +297,28 @@ export function createStorage(dbPath: string = DEFAULT_DB_PATH): Storage {
     },
 
     saveProfile(profile) {
-      db.insert(schema.profiles)
-        .values({
-          userId: profile.user_id,
-          version: profile.version,
-          data: JSON.stringify(profile),
-          updatedAt: profile.updated_at,
-        })
-        .onConflictDoUpdate({
-          target: schema.profiles.userId,
-          set: { version: profile.version, data: JSON.stringify(profile), updatedAt: profile.updated_at },
-        })
-        .run();
-      db.insert(schema.profileSnapshots)
-        .values({
-          userId: profile.user_id,
-          version: profile.version,
-          data: JSON.stringify(profile),
-          createdAt: now(),
-        })
-        .run();
+      tx(() => {
+        db.insert(schema.profiles)
+          .values({
+            userId: profile.user_id,
+            version: profile.version,
+            data: JSON.stringify(profile),
+            updatedAt: profile.updated_at,
+          })
+          .onConflictDoUpdate({
+            target: schema.profiles.userId,
+            set: { version: profile.version, data: JSON.stringify(profile), updatedAt: profile.updated_at },
+          })
+          .run();
+        db.insert(schema.profileSnapshots)
+          .values({
+            userId: profile.user_id,
+            version: profile.version,
+            data: JSON.stringify(profile),
+            createdAt: now(),
+          })
+          .run();
+      });
     },
 
     listSnapshots(userId) {
@@ -476,19 +518,23 @@ export function createStorage(dbPath: string = DEFAULT_DB_PATH): Storage {
 
     // 仅清空词汇账本(知识点 + 变更记录),不动事件/档案/材料/日志
     clearKnowledge(userId) {
-      db.delete(schema.knowledgeItems).where(eq(schema.knowledgeItems.userId, userId)).run();
-      db.delete(schema.knowledgeChanges).where(eq(schema.knowledgeChanges.userId, userId)).run();
+      tx(() => {
+        db.delete(schema.knowledgeItems).where(eq(schema.knowledgeItems.userId, userId)).run();
+        db.delete(schema.knowledgeChanges).where(eq(schema.knowledgeChanges.userId, userId)).run();
+      });
     },
 
     wipeUser(userId) {
-      db.delete(schema.events).where(eq(schema.events.userId, userId)).run();
-      db.delete(schema.profiles).where(eq(schema.profiles.userId, userId)).run();
-      db.delete(schema.profileSnapshots).where(eq(schema.profileSnapshots.userId, userId)).run();
-      db.delete(schema.knowledgeItems).where(eq(schema.knowledgeItems.userId, userId)).run();
-      db.delete(schema.knowledgeChanges).where(eq(schema.knowledgeChanges.userId, userId)).run();
-      db.delete(schema.updateJournal).where(eq(schema.updateJournal.userId, userId)).run();
-      db.delete(schema.authSessions).where(eq(schema.authSessions.userId, userId)).run();
-      db.delete(schema.accounts).where(eq(schema.accounts.userId, userId)).run();
+      tx(() => {
+        db.delete(schema.events).where(eq(schema.events.userId, userId)).run();
+        db.delete(schema.profiles).where(eq(schema.profiles.userId, userId)).run();
+        db.delete(schema.profileSnapshots).where(eq(schema.profileSnapshots.userId, userId)).run();
+        db.delete(schema.knowledgeItems).where(eq(schema.knowledgeItems.userId, userId)).run();
+        db.delete(schema.knowledgeChanges).where(eq(schema.knowledgeChanges.userId, userId)).run();
+        db.delete(schema.updateJournal).where(eq(schema.updateJournal.userId, userId)).run();
+        db.delete(schema.authSessions).where(eq(schema.authSessions.userId, userId)).run();
+        db.delete(schema.accounts).where(eq(schema.accounts.userId, userId)).run();
+      });
     },
   };
 }

@@ -16,6 +16,10 @@ const base = {
   user_id: z.string(),
   session_id: z.string(),
   ts: z.string().describe("ISO 时间戳，引擎以事件时间为准（可复现回放）"),
+  event_id: z
+    .string()
+    .optional()
+    .describe("客户端幂等键：重试必须携带同一 event_id，服务端按它去重"),
 };
 
 export const SessionStartEventSchema = z.object({

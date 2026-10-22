@@ -12,7 +12,13 @@ import {
   effectiveState,
   transition,
 } from "./knowledge";
-import { runSessionUpdate, type Tuning } from "./profiler";
+import {
+  applyPendingWrites,
+  computeSessionUpdate,
+  emptyPendingWrites,
+  type PendingWrites,
+  type Tuning,
+} from "./profiler";
 import {
   buildTargetSpec,
   generateMaterial as runGenerateMaterial,
@@ -27,17 +33,25 @@ export interface EngineOptions {
   tuning?: Tuning;
 }
 
+export interface EventOutcome {
+  type: ReadingEvent["type"];
+  status: "applied" | "duplicate" | "error";
+  error?: string;
+}
+
 export interface ProcessResult {
+  /** 成功落库的事件数（含幂等去重跳过的重复事件） */
   processed: number;
   errors: { index: number; error: string }[];
   /** 触发了尺度 2 更新的 session 数 */
   sessionUpdates: number;
+  results: EventOutcome[];
 }
 
 export interface Engine {
   storage: Storage;
   llm: LLMClient;
-  processEvent(ev: ReadingEvent): Promise<void>;
+  processEvent(ev: ReadingEvent): Promise<{ duplicate: boolean; sessionUpdated: boolean }>;
   processEvents(body: unknown): Promise<ProcessResult>;
   getProfile(userId: string): UserProfile;
   getKnowledgeItems(userId: string): (KnowledgeItem & { effective_state: string })[];
@@ -57,27 +71,29 @@ export function createEngine(opts: EngineOptions = {}): Engine {
   const llm = opts.llm ?? createLLMClient();
   const tuning = opts.tuning ?? {};
 
-  function applyKnowledgeEvent(
+  /** 知识事件只算不写：返回待落库的写入集，由调用方放进事务 */
+  function planKnowledgeEvent(
     userId: string,
     lemmaRaw: string,
     itemType: "word" | "phrase",
     ev: Parameters<typeof transition>[1],
     sessionId: string,
     ts: string,
-  ): void {
+  ): PendingWrites {
+    const writes = emptyPendingWrites();
     const lemma = lemmaRaw.toLowerCase();
     const existing = storage.getKnowledgeItem(userId, lemma);
     let result;
     if (!existing) {
       if (ev.kind === "lookup") result = createFromLookup(lemma, itemType, ev);
       else if (ev.kind === "known") result = createFromKnown(lemma, itemType, ev);
-      else return; // 未跟踪词的纯曝光不建条目
+      else return writes; // 未跟踪词的纯曝光不建条目
     } else {
       result = transition(existing, ev, ts);
     }
-    storage.upsertKnowledgeItem(userId, result.item, ts);
+    writes.knowledgeUpserts.push({ userId, item: result.item, updatedAt: ts });
     if (result.changed) {
-      storage.insertKnowledgeChange({
+      writes.knowledgeChanges.push({
         user_id: userId,
         session_id: sessionId,
         item: lemma,
@@ -88,18 +104,20 @@ export function createEngine(opts: EngineOptions = {}): Engine {
         ts,
       });
     }
+    return writes;
   }
 
-  /** session 结束时的曝光记账：材料文本中出现且本 session 未查的词 */
-  function accountExposures(userId: string, sessionId: string, ts: string): void {
+  /** session 结束时的曝光记账：材料文本中出现且本 session 未查的词（只算不写） */
+  function planExposures(userId: string, sessionId: string, ts: string): PendingWrites {
+    const writes = emptyPendingWrites();
     const sessionEvents = storage.listSessionEvents(userId, sessionId);
     const startEv = sessionEvents.find((e) => e.type === "session_start");
     const materialId =
       sessionEvents.find((e) => e.type === "material_completed" || e.type === "material_abandoned")
         ?.material_id ?? (startEv?.type === "session_start" ? startEv.material.material_id : null);
-    if (!materialId) return;
+    if (!materialId) return writes;
     const material = storage.getMaterial(materialId);
-    if (!material?.text) return;
+    if (!material?.text) return writes;
 
     const lookedUp = new Set(
       sessionEvents.filter((e) => e.type === "word_lookup").map((e) => e.lemma.toLowerCase()),
@@ -108,7 +126,7 @@ export function createEngine(opts: EngineOptions = {}): Engine {
     for (const item of storage.listKnowledgeItems(userId)) {
       if (!tokens.has(item.item)) continue;
       if (lookedUp.has(item.item)) continue; // 查过：lookup 已记账
-      applyKnowledgeEvent(
+      const w = planKnowledgeEvent(
         userId,
         item.item,
         item.item_type,
@@ -116,44 +134,85 @@ export function createEngine(opts: EngineOptions = {}): Engine {
         sessionId,
         ts,
       );
+      writes.knowledgeUpserts.push(...w.knowledgeUpserts);
+      writes.knowledgeChanges.push(...w.knowledgeChanges);
     }
+    return writes;
   }
 
-  async function processEvent(ev: ReadingEvent): Promise<void> {
-    storage.insertEvent(ev);
-    switch (ev.type) {
-      case "session_start":
-        storage.saveMaterial(ev.material);
-        break;
-      case "word_lookup":
-        applyKnowledgeEvent(
-          ev.user_id,
-          ev.lemma,
-          ev.item_type,
-          { kind: "lookup", sessionId: ev.session_id, ts: ev.ts, sentence: ev.sentence },
-          ev.session_id,
-          ev.ts,
-        );
-        break;
-      case "word_known":
-        applyKnowledgeEvent(
-          ev.user_id,
-          ev.lemma,
-          "word",
-          { kind: "known", sessionId: ev.session_id, ts: ev.ts },
-          ev.session_id,
-          ev.ts,
-        );
-        break;
-      case "material_completed":
-      case "material_abandoned":
-      case "feedback":
-        break; // 计入事件流，由 digest 消费
-      case "session_end":
-        accountExposures(ev.user_id, ev.session_id, ev.ts);
-        await runSessionUpdate(storage, llm, ev.user_id, ev.session_id, tuning);
-        break;
+  /** 幂等判定：客户端重试（同 event_id）或重复 session_end 直接跳过副作用 */
+  function isDuplicateEvent(ev: ReadingEvent): boolean {
+    if (ev.event_id && storage.hasEventId(ev.event_id)) return true;
+    if (ev.type === "session_end" && storage.hasSessionEnd(ev.user_id, ev.session_id)) return true;
+    return false;
+  }
+
+  async function processEvent(ev: ReadingEvent): Promise<{ duplicate: boolean; sessionUpdated: boolean }> {
+    if (isDuplicateEvent(ev)) return { duplicate: true, sessionUpdated: false };
+
+    if (ev.type === "session_end") {
+      // LLM（异步）在事务外完成；事件行 + 曝光 + 尺度 2/3 全部写入在单个同步事务里落库，
+      // 任一步失败整体回滚 → 路由 500 → 客户端带同一 event_id 重试是安全的
+      const now = ev.ts;
+      const exposureWrites = planExposures(ev.user_id, ev.session_id, now);
+      const { writes } = await computeSessionUpdate(
+        storage,
+        llm,
+        ev.user_id,
+        ev.session_id,
+        { now, extraChanges: exposureWrites.knowledgeChanges },
+        tuning,
+      );
+      let applied = false;
+      storage.transaction(() => {
+        if (isDuplicateEvent(ev)) return; // await 期间可能已被并发请求落库
+        storage.insertEvent(ev);
+        applyPendingWrites(storage, exposureWrites);
+        applyPendingWrites(storage, writes);
+        applied = true;
+      });
+      return { duplicate: !applied, sessionUpdated: applied };
     }
+
+    storage.transaction(() => {
+      storage.insertEvent(ev);
+      switch (ev.type) {
+        case "session_start":
+          storage.saveMaterial(ev.material);
+          break;
+        case "word_lookup":
+          applyPendingWrites(
+            storage,
+            planKnowledgeEvent(
+              ev.user_id,
+              ev.lemma,
+              ev.item_type,
+              { kind: "lookup", sessionId: ev.session_id, ts: ev.ts, sentence: ev.sentence },
+              ev.session_id,
+              ev.ts,
+            ),
+          );
+          break;
+        case "word_known":
+          applyPendingWrites(
+            storage,
+            planKnowledgeEvent(
+              ev.user_id,
+              ev.lemma,
+              "word",
+              { kind: "known", sessionId: ev.session_id, ts: ev.ts },
+              ev.session_id,
+              ev.ts,
+            ),
+          );
+          break;
+        case "material_completed":
+        case "material_abandoned":
+        case "feedback":
+          break; // 计入事件流，由 digest 消费
+      }
+    });
+    return { duplicate: false, sessionUpdated: false };
   }
 
   function getProfile(userId: string): UserProfile {
@@ -171,15 +230,29 @@ export function createEngine(opts: EngineOptions = {}): Engine {
 
     async processEvents(body: unknown): Promise<ProcessResult> {
       const { events, errors } = validateEvents(body);
+      // 逐事件独立处理：单个失败不影响批内其他事件，逐事件状态返回给客户端
+      const results: EventOutcome[] = [];
+      let processed = 0;
       let sessionUpdates = 0;
       for (const ev of events) {
-        const before = ev.type === "session_end" ? storage.listJournal(ev.user_id).length : -1;
-        await processEvent(ev);
-        if (ev.type === "session_end" && storage.listJournal(ev.user_id).length > before) {
-          sessionUpdates += 1;
+        try {
+          const r = await processEvent(ev);
+          processed += 1;
+          if (r.duplicate) {
+            results.push({ type: ev.type, status: "duplicate" });
+          } else {
+            if (r.sessionUpdated) sessionUpdates += 1;
+            results.push({ type: ev.type, status: "applied" });
+          }
+        } catch (e) {
+          results.push({
+            type: ev.type,
+            status: "error",
+            error: e instanceof Error ? e.message : String(e),
+          });
         }
       }
-      return { processed: events.length, errors, sessionUpdates };
+      return { processed, errors, sessionUpdates, results };
     },
 
     getProfile,

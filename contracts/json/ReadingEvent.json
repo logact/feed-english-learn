@@ -14,6 +14,10 @@
           "type": "string",
           "description": "ISO 时间戳，引擎以事件时间为准（可复现回放）"
         },
+        "event_id": {
+          "description": "客户端幂等键：重试必须携带同一 event_id，服务端按它去重",
+          "type": "string"
+        },
         "type": {
           "type": "string",
           "const": "session_start"
@@ -80,6 +84,10 @@
           "type": "string",
           "description": "ISO 时间戳，引擎以事件时间为准（可复现回放）"
         },
+        "event_id": {
+          "description": "客户端幂等键：重试必须携带同一 event_id，服务端按它去重",
+          "type": "string"
+        },
         "type": {
           "type": "string",
           "const": "session_end"
@@ -105,6 +113,10 @@
         "ts": {
           "type": "string",
           "description": "ISO 时间戳，引擎以事件时间为准（可复现回放）"
+        },
+        "event_id": {
+          "description": "客户端幂等键：重试必须携带同一 event_id，服务端按它去重",
+          "type": "string"
         },
         "type": {
           "type": "string",
@@ -149,6 +161,10 @@
           "type": "string",
           "description": "ISO 时间戳，引擎以事件时间为准（可复现回放）"
         },
+        "event_id": {
+          "description": "客户端幂等键：重试必须携带同一 event_id，服务端按它去重",
+          "type": "string"
+        },
         "type": {
           "type": "string",
           "const": "word_known"
@@ -178,6 +194,10 @@
         "ts": {
           "type": "string",
           "description": "ISO 时间戳，引擎以事件时间为准（可复现回放）"
+        },
+        "event_id": {
+          "description": "客户端幂等键：重试必须携带同一 event_id，服务端按它去重",
+          "type": "string"
         },
         "type": {
           "type": "string",
@@ -227,6 +247,10 @@
           "type": "string",
           "description": "ISO 时间戳，引擎以事件时间为准（可复现回放）"
         },
+        "event_id": {
+          "description": "客户端幂等键：重试必须携带同一 event_id，服务端按它去重",
+          "type": "string"
+        },
         "type": {
           "type": "string",
           "const": "material_abandoned"
@@ -275,6 +299,10 @@
           "type": "string",
           "description": "ISO 时间戳，引擎以事件时间为准（可复现回放）"
         },
+        "event_id": {
+          "description": "客户端幂等键：重试必须携带同一 event_id，服务端按它去重",
+          "type": "string"
+        },
         "type": {
           "type": "string",
           "const": "feedback"
@@ -291,6 +319,15 @@
         },
         "topic": {
           "type": "string"
+        },
+        "difficulty": {
+          "description": "难度显式反馈;阶段检查滞回 gate 的辅助信号",
+          "type": "string",
+          "enum": [
+            "too_easy",
+            "just_right",
+            "too_hard"
+          ]
         }
       },
       "required": [
@@ -298,8 +335,7 @@
         "session_id",
         "ts",
         "type",
-        "material_id",
-        "sentiment"
+        "material_id"
       ],
       "additionalProperties": false
     }

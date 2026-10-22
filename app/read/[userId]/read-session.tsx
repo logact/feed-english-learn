@@ -51,19 +51,38 @@ export default function ReadSession({
 
   const now = () => new Date().toISOString();
 
-  // 事件发送失败不阻塞阅读:静默重试一次
+  // 事件发送失败不阻塞阅读:带同一 event_id 静默重试一次,服务端按 event_id 幂等去重
   async function sendEvent(ev: Record<string, unknown>, retry = true): Promise<boolean> {
+    // 首次发送前固化完整 body:重试必须逐字节相同(同 event_id / ts)
+    const body = JSON.stringify({
+      user_id: userId,
+      session_id: sessionId,
+      ts: now(),
+      event_id: createSessionId(),
+      ...ev,
+    });
     try {
       const res = await fetch("/api/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: userId, session_id: sessionId, ts: now(), ...ev }),
+        body,
       });
       if (res.ok) return true;
     } catch {
       /* 网络异常时落入重试 */
     }
-    if (retry) return sendEvent(ev, false);
+    if (retry) {
+      try {
+        const res = await fetch("/api/events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+        });
+        if (res.ok) return true;
+      } catch {
+        /* 重试仍失败则放弃 */
+      }
+    }
     return false;
   }
 
@@ -91,6 +110,7 @@ export default function ReadSession({
           user_id: userId,
           session_id: sid,
           ts: now(),
+          event_id: createSessionId(),
           type: "session_start",
           material: gm.material,
         }),
