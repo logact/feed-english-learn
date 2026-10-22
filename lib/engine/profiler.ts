@@ -12,10 +12,10 @@ import {
   type StageReviewOutput,
   type UserProfile,
 } from "../../contracts/profile";
-import type { KnowledgeItem } from "../../contracts/knowledge";
+import type { KnowledgeChange, KnowledgeItem } from "../../contracts/knowledge";
 import type { MaterialMeta, ReadingEvent } from "../../contracts/events";
 import type { LLMClient, LLMMessage } from "./llm";
-import type { Storage } from "./storage";
+import type { JournalEntry, Storage } from "./storage";
 import { buildSessionDigest, buildStageDigest, parseLookupDensity, summarizeKnowledge } from "./digest";
 import { effectiveState, isLegalTransition } from "./knowledge";
 
@@ -226,14 +226,49 @@ export interface SessionUpdateResult {
   stageReview: { ran: boolean; gate?: StageGate; delta?: Record<string, unknown> } | null;
 }
 
-export async function runSessionUpdate(
+// ---- 计算/落库分离：LLM 调用（异步）只产出一个 PendingWrites，由调用方在单个同步事务里落库 ----
+
+export interface PendingWrites {
+  profiles: UserProfile[];
+  journal: Omit<JournalEntry, "id">[];
+  knowledgeUpserts: { userId: string; item: KnowledgeItem; updatedAt: string }[];
+  knowledgeChanges: KnowledgeChange[];
+}
+
+export function emptyPendingWrites(): PendingWrites {
+  return { profiles: [], journal: [], knowledgeUpserts: [], knowledgeChanges: [] };
+}
+
+export function mergePendingWrites(target: PendingWrites, src: PendingWrites): PendingWrites {
+  target.profiles.push(...src.profiles);
+  target.journal.push(...src.journal);
+  target.knowledgeUpserts.push(...src.knowledgeUpserts);
+  target.knowledgeChanges.push(...src.knowledgeChanges);
+  return target;
+}
+
+/** 同步落库；须在 storage.transaction 内调用才具备原子性 */
+export function applyPendingWrites(storage: Storage, writes: PendingWrites): void {
+  for (const p of writes.profiles) storage.saveProfile(p);
+  for (const j of writes.journal) storage.insertJournal(j);
+  for (const u of writes.knowledgeUpserts) storage.upsertKnowledgeItem(u.userId, u.item, u.updatedAt);
+  for (const c of writes.knowledgeChanges) storage.insertKnowledgeChange(c);
+}
+
+export interface SessionUpdateComputation {
+  result: SessionUpdateResult;
+  writes: PendingWrites;
+}
+
+export async function computeSessionUpdate(
   storage: Storage,
   llm: LLMClient,
   userId: string,
   sessionId: string,
+  opts: { now: string; extraChanges?: KnowledgeChange[] },
   tuning: Tuning = {},
-): Promise<SessionUpdateResult> {
-  const now = storage.lastEventTs(userId) ?? new Date().toISOString();
+): Promise<SessionUpdateComputation> {
+  const { now, extraChanges = [] } = opts;
   const profile = storage.getProfile(userId) ?? defaultProfile(userId, now);
   const events = storage.listSessionEvents(userId, sessionId);
 
@@ -241,7 +276,8 @@ export async function runSessionUpdate(
   const material = startEv?.type === "session_start" ? startEv.material : null;
   const changes = storage
     .listKnowledgeChanges(userId)
-    .filter((c) => c.session_id === sessionId);
+    .filter((c) => c.session_id === sessionId)
+    .concat(extraChanges);
 
   const digest = buildSessionDigest({ events, material, knowledgeChanges: changes });
 
@@ -263,6 +299,7 @@ export async function runSessionUpdate(
   });
 
   const { profile: updated, delta } = applySessionUpdate(profile, result.data, now, tuning);
+  const writes = emptyPendingWrites();
 
   // ---- knowledge_annotations 回流：校验后应用，全部记 knowledge_changes ----
   const universe = sessionItemUniverse(events, material);
@@ -291,8 +328,8 @@ export async function runSessionUpdate(
       note: ann.note,
       next_review: ann.suggest_state === "fading" ? now : existing.next_review,
     };
-    storage.upsertKnowledgeItem(userId, nextItem, now);
-    storage.insertKnowledgeChange({
+    writes.knowledgeUpserts.push({ userId, item: nextItem, updatedAt: now });
+    writes.knowledgeChanges.push({
       user_id: userId,
       session_id: sessionId,
       item: lemma,
@@ -309,8 +346,8 @@ export async function runSessionUpdate(
     to: { applied: annotationsApplied, rejected: annotationsRejected },
   };
 
-  storage.saveProfile(updated);
-  storage.insertJournal({
+  writes.profiles.push(updated);
+  writes.journal.push({
     userId,
     scale: "session",
     promptVersion: PROMPT_VERSIONS.session,
@@ -322,27 +359,47 @@ export async function runSessionUpdate(
     createdAt: new Date().toISOString(),
   });
 
-  // ---- 尺度 3 触发 ----
+  // ---- 尺度 3 触发：session 档案/journal 尚未落库，显式传给 stage 计算 ----
   let stageReview: SessionUpdateResult["stageReview"] = null;
   const k = tuning.stageReviewInterval ?? STAGE_REVIEW_INTERVAL;
   if (updated.reading_state.sessions_since_review >= k) {
-    stageReview = await runStageReview(storage, llm, userId);
+    const stage = await computeStageReview(storage, llm, userId, {
+      now,
+      profile: updated,
+      extraSessionDigest: digest,
+    });
+    mergePendingWrites(writes, stage.writes);
+    stageReview = stage.result;
   }
 
-  return { digest, applied: { profile: updated, delta }, annotationsApplied, annotationsRejected, stageReview };
+  return {
+    result: { digest, applied: { profile: updated, delta }, annotationsApplied, annotationsRejected, stageReview },
+    writes,
+  };
 }
 
-export async function runStageReview(
+export interface StageReviewComputation {
+  result: { ran: boolean; gate: StageGate; delta: Record<string, unknown> };
+  writes: PendingWrites;
+}
+
+export async function computeStageReview(
   storage: Storage,
   llm: LLMClient,
   userId: string,
-): Promise<{ ran: boolean; gate: StageGate; delta: Record<string, unknown> }> {
-  const now = storage.lastEventTs(userId) ?? new Date().toISOString();
-  const profile = storage.getProfile(userId) ?? defaultProfile(userId, now);
+  opts: { now?: string; profile?: UserProfile; extraSessionDigest?: string } = {},
+): Promise<StageReviewComputation> {
+  const now = opts.now ?? storage.lastEventTs(userId) ?? new Date().toISOString();
+  const profile = opts.profile ?? storage.getProfile(userId) ?? defaultProfile(userId, now);
 
   const journal = storage.listJournal(userId).filter((j) => j.scale === "session");
-  const recentDigests = journal.slice(-STAGE_REVIEW_INTERVAL).map((j) => j.inputSummary);
+  // 本轮 session digest 尚未落库时由 opts 补入；窗口语义与落库后一致（取最后 K 条）
+  const recentDigests = journal
+    .map((j) => j.inputSummary)
+    .concat(opts.extraSessionDigest ? [opts.extraSessionDigest] : [])
+    .slice(-STAGE_REVIEW_INTERVAL);
   const gate = stageGate(recentDigests);
+  const writes = emptyPendingWrites();
 
   if (gate === "hold") {
     // 滞回未放行：不调 LLM，归零计数并记 journal
@@ -350,8 +407,8 @@ export async function runStageReview(
     next.reading_state.sessions_since_review = 0;
     next.version = profile.version + 1;
     next.updated_at = now;
-    storage.saveProfile(next);
-    storage.insertJournal({
+    writes.profiles.push(next);
+    writes.journal.push({
       userId,
       scale: "stage_review",
       promptVersion: PROMPT_VERSIONS.stage,
@@ -362,13 +419,13 @@ export async function runStageReview(
       usage: null,
       createdAt: new Date().toISOString(),
     });
-    return { ran: true, gate, delta: { skipped_llm: true } };
+    return { result: { ran: true, gate, delta: { skipped_llm: true } }, writes };
   }
 
   const items = storage.listKnowledgeItems(userId);
   const changes = storage.listKnowledgeChanges(userId);
   const recentSessionIds = new Set(
-    journal.slice(-STAGE_REVIEW_INTERVAL).map((j) => j.inputSummary.match(/session_id=(\S+)/)?.[1] ?? ""),
+    recentDigests.map((d) => d.match(/session_id=(\S+)/)?.[1] ?? ""),
   );
   const summary = summarizeKnowledge(items, changes, recentSessionIds, now, effectiveState);
   const stageDigest = buildStageDigest(recentDigests, summary, STAGE_REVIEW_INTERVAL);
@@ -391,8 +448,8 @@ export async function runStageReview(
   });
 
   const { profile: updated, delta } = applyStageReview(profile, result.data, gate, now);
-  storage.saveProfile(updated);
-  storage.insertJournal({
+  writes.profiles.push(updated);
+  writes.journal.push({
     userId,
     scale: "stage_review",
     promptVersion: PROMPT_VERSIONS.stage,
@@ -403,5 +460,16 @@ export async function runStageReview(
     usage: result.usage,
     createdAt: new Date().toISOString(),
   });
-  return { ran: true, gate, delta: delta as Record<string, unknown> };
+  return { result: { ran: true, gate, delta: delta as Record<string, unknown> }, writes };
+}
+
+/** 计算并立即落库（不经外层事务；引擎 session_end 路径用 compute + 统一事务） */
+export async function runStageReview(
+  storage: Storage,
+  llm: LLMClient,
+  userId: string,
+): Promise<{ ran: boolean; gate: StageGate; delta: Record<string, unknown> }> {
+  const { result, writes } = await computeStageReview(storage, llm, userId);
+  applyPendingWrites(storage, writes);
+  return result;
 }

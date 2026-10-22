@@ -1,5 +1,6 @@
 // 组件 2 生成 loop 驱动：TargetSpec → 结构化回合（LLM 提议）→ 确定性体检（代码裁决）→ 落库。
 // 不依赖 Next.js，可在 tsx 脚本 / vitest 中独立使用。
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { defaultProfile } from "../../contracts/profile";
 import type { MaterialMeta } from "../../contracts/events";
@@ -275,14 +276,14 @@ export async function generateMaterial(
       ];
 
   const material: MaterialMeta & { text: string } = {
-    material_id: opts.materialId ?? `gen-${userId}-${Date.now()}`,
+    material_id: opts.materialId ?? `gen-${randomUUID()}`,
     topics: final.turn.topics,
     difficulty: spec.band,
     length_words: final.report.length_words,
     summary: final.turn.summary,
     text: final.turn.text,
   };
-  storage.saveMaterial(material);
+  storage.saveMaterial(userId, material);
   storage.insertJournal({
     userId,
     scale: "generate",

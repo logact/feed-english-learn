@@ -39,8 +39,10 @@ export async function POST(request: NextRequest) {
   try {
     const engine = createEngine();
     const result = await engine.processEvents(body);
-    const status = result.processed === 0 && result.errors.length > 0 ? 400 : 200;
-    reqLog.info({ status, processed: result.processed, errors: result.errors.length, sessionUpdates: result.sessionUpdates }, "request end");
+    // 客户端只看 res.ok：任何失败都必须以非 2xx 暴露；重试靠 event_id 幂等去重保证安全
+    const hasProcessingError = result.results.some((r) => r.status === "error");
+    const status = hasProcessingError ? 500 : result.errors.length > 0 ? 400 : 200;
+    reqLog.info({ status, processed: result.processed, errors: result.errors.length, sessionUpdates: result.sessionUpdates, duplicates: result.duplicates }, "request end");
     return NextResponse.json(result, { status });
   } catch (e) {
     reqLog.error({ status: 500, error: e instanceof Error ? e.message : String(e) }, "request failed");
