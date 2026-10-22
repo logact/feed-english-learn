@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { GeneratedMaterial } from "@/contracts/generator";
-import { createSessionId } from "@/lib/session-id";
+import { createSessionId, createEventId } from "@/lib/session-id";
 import styles from "./page.module.css";
 
 type Phase = "idle" | "generating" | "reading" | "closing" | "done" | "error";
@@ -83,11 +83,18 @@ export default function ReadSession({
 
   // 事件发送失败不阻塞阅读:重试一次后,关键事件返回 false 交由调用方处理,
   // 非关键事件进入本地队列等待重发
+  // event_id 为幂等键,随 payload 生成一次,重试/排队重发复用同一个,服务端据此去重
   async function sendEvent(
     ev: Record<string, unknown>,
     { critical = false }: { critical?: boolean } = {},
   ): Promise<boolean> {
-    const payload = { user_id: userId, session_id: sessionId, ts: now(), ...ev };
+    const payload = {
+      user_id: userId,
+      session_id: sessionId,
+      ts: now(),
+      event_id: createEventId(),
+      ...ev,
+    };
     const ok = (await postEvents(payload)) || (await postEvents(payload));
     if (!ok) {
       if (critical) return false;
@@ -125,6 +132,7 @@ export default function ReadSession({
           user_id: userId,
           session_id: sid,
           ts: now(),
+          event_id: createEventId(),
           type: "session_start",
           material: gm.material,
         }),

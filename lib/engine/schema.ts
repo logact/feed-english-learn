@@ -8,10 +8,14 @@ export const events = sqliteTable(
     sessionId: text("session_id").notNull(),
     type: text("type").notNull(),
     ts: text("ts").notNull(),
+    eventId: text("event_id"), // 幂等键；NULL 表示不去重（SQLite 唯一索引中 NULL 互不冲突）
     payload: text("payload").notNull(), // 完整事件 JSON
     createdAt: text("created_at").notNull(),
   },
-  (t) => [index("idx_events_user").on(t.userId, t.sessionId)],
+  (t) => [
+    index("idx_events_user").on(t.userId, t.sessionId),
+    uniqueIndex("uq_events_user_event").on(t.userId, t.eventId),
+  ],
 );
 
 export const profiles = sqliteTable("profiles", {

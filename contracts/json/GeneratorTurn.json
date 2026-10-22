@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "const": "check_words"
+        },
+        "words": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "打草稿时不确定熟悉度的候选词"
+        }
+      },
+      "required": [
+        "action",
+        "words"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "const": "check_draft"
+        },
+        "text": {
+          "type": "string",
+          "description": "请求整篇体检的草稿"
+        }
+      },
+      "required": [
+        "action",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "const": "submit"
+        },
+        "text": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "topics": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "new_items": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "自报引入的新词，与代码判定对照"
+        }
+      },
+      "required": [
+        "action",
+        "text",
+        "summary",
+        "topics",
+        "new_items"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

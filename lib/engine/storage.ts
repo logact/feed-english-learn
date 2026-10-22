@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS events (
   session_id TEXT NOT NULL,
   type TEXT NOT NULL,
   ts TEXT NOT NULL,
+  event_id TEXT,
   payload TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
@@ -141,7 +142,8 @@ export interface Storage {
   sqlite: Database.Database;
   close(): void;
 
-  insertEvent(ev: ReadingEvent): void;
+  /** 幂等写入：返回 true=新插入，false=重复事件（同 user 下同幂等键已存在） */
+  insertEvent(ev: ReadingEvent): boolean;
   listEvents(userId: string): ReadingEvent[];
   listSessionEvents(userId: string, sessionId: string): ReadingEvent[];
   lastEventTs(userId: string): string | null;
@@ -199,6 +201,14 @@ export function createStorage(dbPath: string = DEFAULT_DB_PATH): Storage {
   const sqlite = new Database(dbPath);
   sqlite.pragma("journal_mode = WAL");
   sqlite.exec(DDL);
+  // 旧库迁移：events 表补 event_id 幂等键列（新库 DDL 已含）
+  const cols = sqlite.prepare("PRAGMA table_info(events)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "event_id")) {
+    sqlite.exec("ALTER TABLE events ADD COLUMN event_id TEXT");
+  }
+  sqlite.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_events_user_event ON events(user_id, event_id)",
+  );
   const db = drizzle(sqlite, { schema });
   const now = () => new Date().toISOString();
 
@@ -208,16 +218,24 @@ export function createStorage(dbPath: string = DEFAULT_DB_PATH): Storage {
     close: () => sqlite.close(),
 
     insertEvent(ev) {
-      db.insert(schema.events)
+      // 幂等键:session_end 语义上一个会话只结束一次,始终按 (user_id, session_id) 去重
+      // (即使客户端重发时生成了新 event_id);其余事件按客户端 event_id 去重,无键则不去重
+      const eventId =
+        ev.type === "session_end" ? `session_end:${ev.session_id}` : (ev.event_id ?? null);
+      const res = db
+        .insert(schema.events)
         .values({
           userId: ev.user_id,
           sessionId: ev.session_id,
           type: ev.type,
           ts: ev.ts,
+          eventId,
           payload: JSON.stringify(ev),
           createdAt: now(),
         })
+        .onConflictDoNothing({ target: [schema.events.userId, schema.events.eventId] })
         .run();
+      return res.changes > 0;
     },
 
     listEvents(userId) {

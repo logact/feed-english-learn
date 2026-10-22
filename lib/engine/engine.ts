@@ -32,12 +32,15 @@ export interface ProcessResult {
   errors: { index: number; error: string }[];
   /** 触发了尺度 2 更新的 session 数 */
   sessionUpdates: number;
+  /** 因幂等键重复而被跳过的事件数（重试/重投） */
+  duplicates: number;
 }
 
 export interface Engine {
   storage: Storage;
   llm: LLMClient;
-  processEvent(ev: ReadingEvent): Promise<void>;
+  /** 返回 true=已处理；false=幂等去重命中（重复事件，已跳过副作用） */
+  processEvent(ev: ReadingEvent): Promise<boolean>;
   processEvents(body: unknown): Promise<ProcessResult>;
   getProfile(userId: string): UserProfile;
   getKnowledgeItems(userId: string): (KnowledgeItem & { effective_state: string })[];
@@ -119,8 +122,9 @@ export function createEngine(opts: EngineOptions = {}): Engine {
     }
   }
 
-  async function processEvent(ev: ReadingEvent): Promise<void> {
-    storage.insertEvent(ev);
+  async function processEvent(ev: ReadingEvent): Promise<boolean> {
+    // 重复事件（客户端重试/重投）：已入账过，跳过所有副作用，避免重复 LLM 调用与档案污染
+    if (!storage.insertEvent(ev)) return false;
     switch (ev.type) {
       case "session_start":
         storage.saveMaterial(ev.material);
@@ -154,6 +158,7 @@ export function createEngine(opts: EngineOptions = {}): Engine {
         await runSessionUpdate(storage, llm, ev.user_id, ev.session_id, tuning);
         break;
     }
+    return true;
   }
 
   function getProfile(userId: string): UserProfile {
@@ -172,14 +177,16 @@ export function createEngine(opts: EngineOptions = {}): Engine {
     async processEvents(body: unknown): Promise<ProcessResult> {
       const { events, errors } = validateEvents(body);
       let sessionUpdates = 0;
+      let duplicates = 0;
       for (const ev of events) {
         const before = ev.type === "session_end" ? storage.listJournal(ev.user_id).length : -1;
-        await processEvent(ev);
+        const processed = await processEvent(ev);
+        if (!processed) duplicates += 1;
         if (ev.type === "session_end" && storage.listJournal(ev.user_id).length > before) {
           sessionUpdates += 1;
         }
       }
-      return { processed: events.length, errors, sessionUpdates };
+      return { processed: events.length, errors, sessionUpdates, duplicates };
     },
 
     getProfile,

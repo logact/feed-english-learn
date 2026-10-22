@@ -71,15 +71,15 @@ export const ReadingEventSchema = z.discriminatedUnion("type", [
 ]);
 ```
 
-事件 append-only 落库,引擎以事件时间 `ts` 为准 —— 这是**可回放**(sim/replay.ts)的基础。
+事件 append-only 落库,引擎以事件时间 `ts` 为准 —— 这是**可回放**(sim/replay.ts)的基础。事件可携带客户端生成的 `event_id`(幂等键,重试时复用),写入时按 `(user_id, event_id)` 去重;`session_end` 始终按 `(user_id, session_id)` 去重。
 
 ## 5. 引擎门面 `lib/engine/engine.ts`
 
 `createEngine()` 组装 storage + llm,`processEvent` 是分发器:
 
 ```ts
-async function processEvent(ev: ReadingEvent): Promise<void> {
-  storage.insertEvent(ev);                    // 永远先记账(事件溯源)
+async function processEvent(ev: ReadingEvent): Promise<boolean> {
+  if (!storage.insertEvent(ev)) return false; // 幂等去重命中(重试/重投):跳过副作用
   switch (ev.type) {
     case "session_start":  storage.saveMaterial(ev.material); break;
     case "word_lookup":    applyKnowledgeEvent(..., { kind: "lookup", ... }); break;
@@ -90,8 +90,11 @@ async function processEvent(ev: ReadingEvent): Promise<void> {
       break;
     // completed / abandoned / feedback 只进事件流,由 digest 消费
   }
+  return true;
 }
 ```
+
+摄入幂等:事件可携带客户端生成的 `event_id`,服务端按 `(user_id, event_id)` 唯一索引去重;`session_end` 语义上一个会话只结束一次,始终按 `(user_id, session_id)` 幂等(即使重发换了新 `event_id`)。重复事件只返回成功、不重跑副作用 —— 客户端重试不会造成双倍 LLM 调用或档案污染(issue #3)。
 
 `accountExposures` 是个巧妙的点:session 结束时,把材料正文分词,凡是**账本里出现过、本 session 没查**的词,记一次「无查询曝光」——这正是「这个词用户在语境里没查就读过去了」的证据,驱动 familiar→mastered。
 
@@ -308,4 +311,4 @@ API 是引擎的薄壳:
 
 ## 14. 测试布局 `tests/`
 
-重点是**纯函数**:`knowledge.test.ts`(状态机全迁移)、`clamp.test.ts`(clamp/gate)、`digest.test.ts`、`generator.test.ts`(验收闸门)、`llm.test.ts`(重试/Mock/客户端选择)、`contracts.test.ts`(schema)、`replay.test.ts`、`profiler.test.ts`。运行 `pnpm test`。
+重点是**纯函数**:`knowledge.test.ts`(状态机全迁移)、`clamp.test.ts`(clamp/gate)、`digest.test.ts`、`generator.test.ts`(验收闸门)、`llm.test.ts`(重试/Mock/客户端选择)、`contracts.test.ts`(schema)、`replay.test.ts`、`profiler.test.ts`、`idempotency.test.ts`(事件幂等去重)。运行 `pnpm test`。

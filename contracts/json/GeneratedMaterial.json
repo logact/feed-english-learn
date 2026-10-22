@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "material": {
+      "type": "object",
+      "properties": {
+        "material_id": {
+          "type": "string"
+        },
+        "topics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "difficulty": {
+          "type": "string",
+          "description": "难度描述，如 band 提示"
+        },
+        "length_words": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "summary": {
+          "type": "string",
+          "description": "正文摘要"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "material_id",
+        "topics",
+        "difficulty",
+        "length_words",
+        "summary",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "new_items": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "turns": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "report": {
+      "type": "object",
+      "properties": {
+        "length_words": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "length_ok": {
+          "type": "boolean"
+        },
+        "predicted_lookup_rate": {
+          "type": "number",
+          "description": "硬生词（stretch/untracked/账本 new）token 占比；review 词是刻意重现，不计入"
+        },
+        "coverage_ok": {
+          "type": "boolean"
+        },
+        "new_items": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "判定的不同硬生词（stretch + untracked）"
+        },
+        "new_items_used": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "new_item_budget": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "budget_ok": {
+          "type": "boolean"
+        },
+        "review_coverage": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item": {
+                "type": "string"
+              },
+              "present": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "item",
+              "present"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "review_occurrences": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "description": "supported/fading 旧词出现次数（信息项）"
+        },
+        "review_ok": {
+          "type": "boolean"
+        },
+        "avoid_violations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "untracked_items": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "账本与词表都无法判定的词，保守计为 stretch"
+        },
+        "pass": {
+          "type": "boolean"
+        },
+        "failures": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "length_words",
+        "length_ok",
+        "predicted_lookup_rate",
+        "coverage_ok",
+        "new_items",
+        "new_items_used",
+        "new_item_budget",
+        "budget_ok",
+        "review_coverage",
+        "review_occurrences",
+        "review_ok",
+        "avoid_violations",
+        "untracked_items",
+        "pass",
+        "failures"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "material",
+    "new_items",
+    "turns",
+    "warnings",
+    "report"
+  ],
+  "additionalProperties": false
+}
