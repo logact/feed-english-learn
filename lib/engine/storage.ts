@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { eq, and, desc, asc } from "drizzle-orm";
+import { eq, and, desc, asc, gte, count } from "drizzle-orm";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import * as schema from "./schema";
@@ -174,6 +174,8 @@ export interface Storage {
 
   insertJournal(entry: Omit<JournalEntry, "id">): void;
   listJournal(userId: string): JournalEntry[];
+  lastJournalTs(userId: string, scale: string): string | null;
+  countJournalSince(userId: string, scale: string, sinceIso: string): number;
 
   clearKnowledge(userId: string): void;
   wipeUser(userId: string): void;
@@ -502,6 +504,33 @@ export function createStorage(dbPath: string = DEFAULT_DB_PATH): Storage {
           usage: r.usage ? (JSON.parse(r.usage) as JournalEntry["usage"]) : null,
           createdAt: r.createdAt,
         }));
+    },
+
+    // createdAt 为 ISO 字符串，字典序即时间序
+    lastJournalTs(userId, scale) {
+      const rows = db
+        .select({ createdAt: schema.updateJournal.createdAt })
+        .from(schema.updateJournal)
+        .where(and(eq(schema.updateJournal.userId, userId), eq(schema.updateJournal.scale, scale)))
+        .orderBy(desc(schema.updateJournal.createdAt), desc(schema.updateJournal.id))
+        .limit(1)
+        .all();
+      return rows[0]?.createdAt ?? null;
+    },
+
+    countJournalSince(userId, scale, sinceIso) {
+      const rows = db
+        .select({ n: count() })
+        .from(schema.updateJournal)
+        .where(
+          and(
+            eq(schema.updateJournal.userId, userId),
+            eq(schema.updateJournal.scale, scale),
+            gte(schema.updateJournal.createdAt, sinceIso),
+          ),
+        )
+        .all();
+      return rows[0]?.n ?? 0;
     },
 
     // 仅清空词汇账本(知识点 + 变更记录),不动事件/档案/材料/日志
