@@ -24,7 +24,7 @@ import {
   generateMaterial as runGenerateMaterial,
   type GenerateOptions,
 } from "./generator";
-import { createStorage, getDefaultStorage, type Storage } from "./storage";
+import { createStorage, dedupKeyOf, getDefaultStorage, type Storage } from "./storage";
 import { createLLMClient, type LLMClient } from "./llm";
 
 export interface EngineOptions {
@@ -46,11 +46,14 @@ export interface ProcessResult {
   /** 触发了尺度 2 更新的 session 数 */
   sessionUpdates: number;
   results: EventOutcome[];
+  /** 因幂等键重复而被跳过的事件数（重试/重投） */
+  duplicates: number;
 }
 
 export interface Engine {
   storage: Storage;
   llm: LLMClient;
+  /** duplicate=幂等去重命中（已跳过副作用）；sessionUpdated=本次触发了尺度 2 更新 */
   processEvent(ev: ReadingEvent): Promise<{ duplicate: boolean; sessionUpdated: boolean }>;
   processEvents(body: unknown): Promise<ProcessResult>;
   getProfile(userId: string): UserProfile;
@@ -116,7 +119,7 @@ export function createEngine(opts: EngineOptions = {}): Engine {
       sessionEvents.find((e) => e.type === "material_completed" || e.type === "material_abandoned")
         ?.material_id ?? (startEv?.type === "session_start" ? startEv.material.material_id : null);
     if (!materialId) return writes;
-    const material = storage.getMaterial(materialId);
+    const material = storage.getMaterial(userId, materialId);
     if (!material?.text) return writes;
 
     const lookedUp = new Set(
@@ -140,11 +143,10 @@ export function createEngine(opts: EngineOptions = {}): Engine {
     return writes;
   }
 
-  /** 幂等判定：客户端重试（同 event_id）或重复 session_end 直接跳过副作用 */
+  /** 幂等预检：客户端重试（同幂等键）直接跳过副作用，省掉重复的 LLM 调用 */
   function isDuplicateEvent(ev: ReadingEvent): boolean {
-    if (ev.event_id && storage.hasEventId(ev.event_id)) return true;
-    if (ev.type === "session_end" && storage.hasSessionEnd(ev.user_id, ev.session_id)) return true;
-    return false;
+    const key = dedupKeyOf(ev);
+    return key !== null && storage.hasEventId(ev.user_id, key);
   }
 
   async function processEvent(ev: ReadingEvent): Promise<{ duplicate: boolean; sessionUpdated: boolean }> {
@@ -165,8 +167,8 @@ export function createEngine(opts: EngineOptions = {}): Engine {
       );
       let applied = false;
       storage.transaction(() => {
-        if (isDuplicateEvent(ev)) return; // await 期间可能已被并发请求落库
-        storage.insertEvent(ev);
+        // insertEvent 返回 false = 幂等键冲突（await 期间可能已被并发请求落库）
+        if (!storage.insertEvent(ev)) return;
         applyPendingWrites(storage, exposureWrites);
         applyPendingWrites(storage, writes);
         applied = true;
@@ -174,11 +176,12 @@ export function createEngine(opts: EngineOptions = {}): Engine {
       return { duplicate: !applied, sessionUpdated: applied };
     }
 
+    let applied = false;
     storage.transaction(() => {
-      storage.insertEvent(ev);
+      if (!storage.insertEvent(ev)) return; // 重复事件：跳过副作用
       switch (ev.type) {
         case "session_start":
-          storage.saveMaterial(ev.material);
+          storage.saveMaterial(ev.user_id, ev.material);
           break;
         case "word_lookup":
           applyPendingWrites(
@@ -211,8 +214,9 @@ export function createEngine(opts: EngineOptions = {}): Engine {
         case "feedback":
           break; // 计入事件流，由 digest 消费
       }
+      applied = true;
     });
-    return { duplicate: false, sessionUpdated: false };
+    return { duplicate: !applied, sessionUpdated: false };
   }
 
   function getProfile(userId: string): UserProfile {
@@ -234,11 +238,13 @@ export function createEngine(opts: EngineOptions = {}): Engine {
       const results: EventOutcome[] = [];
       let processed = 0;
       let sessionUpdates = 0;
+      let duplicates = 0;
       for (const ev of events) {
         try {
           const r = await processEvent(ev);
           processed += 1;
           if (r.duplicate) {
+            duplicates += 1;
             results.push({ type: ev.type, status: "duplicate" });
           } else {
             if (r.sessionUpdated) sessionUpdates += 1;
@@ -252,7 +258,7 @@ export function createEngine(opts: EngineOptions = {}): Engine {
           });
         }
       }
-      return { processed, errors, sessionUpdates, results };
+      return { processed, errors, sessionUpdates, results, duplicates };
     },
 
     getProfile,

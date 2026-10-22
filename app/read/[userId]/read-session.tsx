@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { GeneratedMaterial } from "@/contracts/generator";
-import { createSessionId } from "@/lib/session-id";
+import { createSessionId, createEventId } from "@/lib/session-id";
 import styles from "./page.module.css";
 
 type Phase = "idle" | "generating" | "reading" | "closing" | "done" | "error";
@@ -47,48 +47,69 @@ export default function ReadSession({
     "too_easy" | "just_right" | "too_hard" | null
   >(null);
   const [error, setError] = useState<string | null>(null);
+  const [closeError, setCloseError] = useState<string | null>(null);
   const startedAtRef = useRef<number>(0);
+  // 发送失败的非关键事件在此排队,待网络恢复后批量重发
+  const pendingRef = useRef<Array<Record<string, unknown>>>([]);
+  const flushingRef = useRef(false);
 
   const now = () => new Date().toISOString();
 
-  // 事件发送失败不阻塞阅读:带同一 event_id 静默重试一次,服务端按 event_id 幂等去重
-  async function sendEvent(ev: Record<string, unknown>, retry = true): Promise<boolean> {
-    // 首次发送前固化完整 body:重试必须逐字节相同(同 event_id / ts)
-    const body = JSON.stringify({
-      user_id: userId,
-      session_id: sessionId,
-      ts: now(),
-      event_id: createSessionId(),
-      ...ev,
-    });
+  async function postEvents(
+    payload: Record<string, unknown> | Array<Record<string, unknown>>,
+  ): Promise<boolean> {
     try {
       const res = await fetch("/api/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body,
+        body: JSON.stringify(payload),
       });
-      if (res.ok) return true;
+      return res.ok;
     } catch {
-      /* 网络异常时落入重试 */
+      return false;
     }
-    if (retry) {
-      try {
-        const res = await fetch("/api/events", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body,
-        });
-        if (res.ok) return true;
-      } catch {
-        /* 重试仍失败则放弃 */
-      }
+  }
+
+  // 尽力重发排队事件;失败则保留在队列中等待下次机会
+  async function flushPending(): Promise<void> {
+    if (flushingRef.current || pendingRef.current.length === 0) return;
+    flushingRef.current = true;
+    try {
+      if (await postEvents(pendingRef.current)) pendingRef.current = [];
+    } finally {
+      flushingRef.current = false;
     }
-    return false;
+  }
+
+  // 事件发送失败不阻塞阅读:重试一次后,关键事件返回 false 交由调用方处理,
+  // 非关键事件进入本地队列等待重发
+  // event_id 为幂等键,随 payload 生成一次,重试/排队重发复用同一个,服务端据此去重
+  async function sendEvent(
+    ev: Record<string, unknown>,
+    { critical = false }: { critical?: boolean } = {},
+  ): Promise<boolean> {
+    const payload = {
+      user_id: userId,
+      session_id: sessionId,
+      ts: now(),
+      event_id: createEventId(),
+      ...ev,
+    };
+    const ok = (await postEvents(payload)) || (await postEvents(payload));
+    if (!ok) {
+      if (critical) return false;
+      console.warn(`[events] ${String(ev.type)} 发送失败,已加入待重发队列`);
+      pendingRef.current.push(payload);
+      return false;
+    }
+    void flushPending();
+    return true;
   }
 
   async function generate() {
     setPhase("generating");
     setError(null);
+    setCloseError(null);
     setLookedUp(new Map());
     setKnownMarked(new Set());
     setFeedbackSent(null);
@@ -102,19 +123,21 @@ export default function ReadSession({
       setSessionId(sid);
       setMaterial(gm);
       startedAtRef.current = Date.now();
-      // session_start 携带正文,供引擎做曝光记账
-      await fetch("/api/events", {
+      // session_start 携带正文,供引擎做曝光记账;失败则不允许开始阅读,
+      // 否则整个会话的曝光统计会静默丢失
+      const startRes = await fetch("/api/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           user_id: userId,
           session_id: sid,
           ts: now(),
-          event_id: createSessionId(),
+          event_id: createEventId(),
           type: "session_start",
           material: gm.material,
         }),
-      }).catch(() => {});
+      });
+      if (!startRes.ok) throw new Error(`会话开启失败 (${startRes.status})`);
       setPhase("reading");
     } catch (e) {
       setError(e instanceof Error ? e.message : "生成失败,请稍后再试");
@@ -140,6 +163,7 @@ export default function ReadSession({
   async function finish(completed: boolean) {
     if (!material || !sessionId) return;
     setPhase("closing");
+    setCloseError(null);
     const base = {
       material_id: material.material.material_id,
       // 仅在点击事件处理器中执行的计时,非渲染期调用
@@ -147,13 +171,24 @@ export default function ReadSession({
       duration_ms: Date.now() - startedAtRef.current,
       words_read: material.material.length_words,
     };
-    await sendEvent({
-      type: completed ? "material_completed" : "material_abandoned",
-      completion_rate: completed ? 1 : scrollCompletion(),
-      ...base,
-    });
-    // session_end 会触发档案更新(LLM,可能需要几秒)
-    await sendEvent({ type: "session_end" });
+    const recorded = await sendEvent(
+      {
+        type: completed ? "material_completed" : "material_abandoned",
+        completion_rate: completed ? 1 : scrollCompletion(),
+        ...base,
+      },
+      { critical: true },
+    );
+    // 尽量把排队的查词/反馈事件一并送达
+    await flushPending();
+    // session_end 会触发档案更新(LLM,可能需要几秒);
+    // 丢失它意味着学习档案不更新,因此失败时阻止进入完成页
+    const ended = await sendEvent({ type: "session_end" }, { critical: true });
+    if (!recorded || !ended) {
+      setCloseError("本次阅读记录没能保存成功(可能是网络问题)。请点击下方按钮重试。");
+      setPhase("reading");
+      return;
+    }
     setPhase("done");
   }
 
@@ -390,8 +425,13 @@ export default function ReadSession({
           ))}
         </div>
         <div className={styles.finishRow}>
+          {closeError && (
+            <p className={styles.error} role="alert">
+              {closeError}
+            </p>
+          )}
           <button className="btn btn-primary" onClick={() => finish(true)}>
-            完成阅读
+            {closeError ? "重试保存" : "完成阅读"}
           </button>
           <button className="btn btn-quiet" onClick={() => finish(false)}>
             没读完,离开

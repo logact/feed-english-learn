@@ -19,7 +19,7 @@ const base = {
   event_id: z
     .string()
     .optional()
-    .describe("客户端幂等键：重试必须携带同一 event_id，服务端按它去重"),
+    .describe("客户端生成的幂等键；重试必须复用同一 event_id，服务端按 (user_id, event_id) 去重"),
 };
 
 export const SessionStartEventSchema = z.object({

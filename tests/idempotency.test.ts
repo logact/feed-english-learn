@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { createStorage } from "../lib/engine/storage";
+import { createStorage, type Storage } from "../lib/engine/storage";
 import { MockLLMClient, type LLMClient, type LLMRequest, type LLMResult } from "../lib/engine/llm";
-import { createEngine } from "../lib/engine/engine";
+import { createEngine, type Engine } from "../lib/engine/engine";
 import type { ReadingEvent } from "../contracts/events";
 
 const USER = "u1";
@@ -44,13 +44,71 @@ const sessionEnd: ReadingEvent = {
   type: "session_end",
 };
 
-function setup() {
+function setup(): { storage: Storage; engine: Engine } {
   const storage = createStorage(":memory:");
   const engine = createEngine({ storage, llm: new MockLLMClient() });
   return { storage, engine };
 }
 
-describe("processEvent 幂等（issue #9）", () => {
+describe("事件摄入幂等去重（issue #3）", () => {
+  it("重复投递同一批事件：事件流、知识账本、profile、journal 均只记一次", async () => {
+    const { storage, engine } = setup();
+    const events = [sessionStart, lookup, sessionEnd];
+    for (const ev of events) await engine.processEvent(ev);
+    // 模拟客户端静默重试：整批原样重发
+    for (const ev of events) await engine.processEvent(ev);
+
+    expect(storage.listEvents(USER).length).toBe(events.length);
+    expect(storage.getKnowledgeItem(USER, "cat")?.lookup_count).toBe(1);
+    expect(storage.getProfile(USER)?.version).toBe(1);
+    expect(storage.getProfile(USER)?.reading_state.sessions_since_review).toBe(1);
+    expect(storage.listJournal(USER).length).toBe(1);
+  });
+
+  it("session_end 按 (user_id, session_id) 幂等,即使重发时 event_id 不同", async () => {
+    const { storage, engine } = setup();
+    const end1: ReadingEvent = { ...sessionEnd, event_id: "ev-end-1" };
+    const end2: ReadingEvent = {
+      ...sessionEnd,
+      ts: "2026-01-01T10:05:05.000Z",
+      event_id: "ev-end-2",
+    };
+
+    expect((await engine.processEvent(end1)).duplicate).toBe(false);
+    expect((await engine.processEvent(end2)).duplicate).toBe(true);
+
+    expect(storage.listJournal(USER).length).toBe(1);
+    expect(storage.listEvents(USER).filter((e) => e.type === "session_end").length).toBe(1);
+  });
+
+  it("不同 event_id 的同类事件不去重", async () => {
+    const { storage, engine } = setup();
+    const lookupWith = (eventId: string, ts: string): ReadingEvent => ({
+      ...lookup,
+      ts,
+      event_id: eventId,
+    });
+
+    expect((await engine.processEvent(lookupWith("ev-a", "2026-01-01T10:01:00.000Z"))).duplicate).toBe(false);
+    expect((await engine.processEvent(lookupWith("ev-b", "2026-01-01T10:02:00.000Z"))).duplicate).toBe(false);
+    expect(storage.getKnowledgeItem(USER, "cat")?.lookup_count).toBe(2);
+  });
+
+  it("processEvents 报告重复计数", async () => {
+    const { engine } = setup();
+    const events = [sessionStart, lookup, sessionEnd];
+
+    const first = await engine.processEvents(events);
+    expect(first.duplicates).toBe(0);
+    expect(first.sessionUpdates).toBe(1);
+
+    const retry = await engine.processEvents(events);
+    expect(retry.duplicates).toBe(events.length);
+    expect(retry.sessionUpdates).toBe(0);
+  });
+});
+
+describe("processEvent 原子性（issue #9）", () => {
   it("同一 event_id 的 word_lookup 重发：事件/账本/变更只记一次", async () => {
     const { storage, engine } = setup();
     await engine.processEvent(sessionStart);
@@ -89,7 +147,7 @@ describe("processEvent 幂等（issue #9）", () => {
     expect(storage.listEvents(USER)).toHaveLength(afterFirst.events);
   });
 
-  it("session_end 重发（无 event_id 的旧客户端）：按 (user, session) 天然去重", async () => {
+  it("session_end 重发（无 event_id 的旧客户端）：按 (user, session) 合成键去重", async () => {
     const { storage, engine } = setup();
     const start = { ...sessionStart, event_id: undefined };
     const end = { ...sessionEnd, event_id: undefined };

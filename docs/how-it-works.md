@@ -71,7 +71,7 @@ export const ReadingEventSchema = z.discriminatedUnion("type", [
 ]);
 ```
 
-事件 append-only 落库,引擎以事件时间 `ts` 为准 —— 这是**可回放**(sim/replay.ts)的基础。
+事件 append-only 落库,引擎以事件时间 `ts` 为准 —— 这是**可回放**(sim/replay.ts)的基础。事件可携带客户端生成的 `event_id`(幂等键,重试时复用),写入时按 `(user_id, event_id)` 去重;`session_end` 始终按 `(user_id, session_id)` 去重。
 
 ## 5. 引擎门面 `lib/engine/engine.ts`
 
@@ -79,24 +79,25 @@ export const ReadingEventSchema = z.discriminatedUnion("type", [
 
 ```ts
 async function processEvent(ev: ReadingEvent) {
-  if (isDuplicateEvent(ev)) return { duplicate: true };  // event_id / session_end 去重
+  if (isDuplicateEvent(ev)) return { duplicate: true };  // 幂等键预检(省掉重复 LLM 调用)
   if (ev.type === "session_end") {
     const exposureWrites = planExposures(...);           // 先算曝光(只算不写)
     const { writes } = await computeSessionUpdate(...);  // LLM 尺度 2/3,事务外
     storage.transaction(() => {                          // 单事务落库,失败整体回滚
-      if (isDuplicateEvent(ev)) return;                  // await 期间复查
-      storage.insertEvent(ev);
+      if (!storage.insertEvent(ev)) return;              // 重复事件(重试/重投):跳过副作用
       applyPendingWrites(storage, exposureWrites);
       applyPendingWrites(storage, writes);
     });
     return;
   }
   storage.transaction(() => {                            // 其余事件:insertEvent + 同步副作用
-    storage.insertEvent(ev);
+    if (!storage.insertEvent(ev)) return;
     // session_start → saveMaterial;word_lookup/word_known → 知识状态机;其余只进事件流
   });
 }
 ```
+
+摄入幂等:事件可携带客户端生成的 `event_id`,服务端按 `(user_id, event_id)` 唯一索引去重;`session_end` 语义上一个会话只结束一次,落库时统一改写为合成键 `session_end:<session_id>`(即使重发换了新 `event_id`)。重复事件只返回成功、不重跑副作用。每个事件的 `insertEvent` + 副作用写在**单个同步事务**里,失败整体回滚;LLM 调用(异步)在事务外完成,只产出待写入集(`computeSessionUpdate` → `applyPendingWrites`),因此 LLM 失败不会留下半截状态,客户端重试可完整重放(issue #9)。
 
 `accountExposures`(现为 `planExposures`) 是个巧妙的点:session 结束时,把材料正文分词,凡是**账本里出现过、本 session 没查**的词,记一次「无查询曝光」——这正是「这个词用户在语境里没查就读过去了」的证据,驱动 familiar→mastered。
 
@@ -249,7 +250,7 @@ SQLite(better-sqlite3 + drizzle),9 张表:
 | `events` | append-only 事件流(回放的事实源) |
 | `profiles` + `profile_snapshots` | 当前档案 + 每次版本历史 |
 | `knowledge_items` + `knowledge_changes` | 词汇账本 + 每个词的状态史(含触发源) |
-| `materials` | 生成的材料(含正文) |
+| `materials` | 生成的材料(含正文,按 `(user_id, material_id)` 隔离) |
 | `update_journal` | 每次 LLM 更新的完整审计 |
 | `accounts` | 规范化邮箱、用户 ID 与显示昵称 |
 | `auth_sessions` | 会话 token 哈希、归属用户与过期时间 |
@@ -313,4 +314,4 @@ API 是引擎的薄壳:
 
 ## 14. 测试布局 `tests/`
 
-重点是**纯函数**:`knowledge.test.ts`(状态机全迁移)、`clamp.test.ts`(clamp/gate)、`digest.test.ts`、`generator.test.ts`(验收闸门)、`llm.test.ts`(重试/Mock/客户端选择)、`contracts.test.ts`(schema)、`replay.test.ts`、`profiler.test.ts`。运行 `pnpm test`。
+重点是**纯函数**:`knowledge.test.ts`(状态机全迁移)、`clamp.test.ts`(clamp/gate)、`digest.test.ts`、`generator.test.ts`(验收闸门)、`llm.test.ts`(重试/Mock/客户端选择)、`contracts.test.ts`(schema)、`replay.test.ts`、`profiler.test.ts`、`idempotency.test.ts`(事件幂等去重)。运行 `pnpm test`。

@@ -15,7 +15,7 @@
           "description": "ISO 时间戳，引擎以事件时间为准（可复现回放）"
         },
         "event_id": {
-          "description": "客户端幂等键：重试必须携带同一 event_id，服务端按它去重",
+          "description": "客户端生成的幂等键；重试必须复用同一 event_id，服务端按 (user_id, event_id) 去重",
           "type": "string"
         },
         "type": {
@@ -85,7 +85,7 @@
           "description": "ISO 时间戳，引擎以事件时间为准（可复现回放）"
         },
         "event_id": {
-          "description": "客户端幂等键：重试必须携带同一 event_id，服务端按它去重",
+          "description": "客户端生成的幂等键；重试必须复用同一 event_id，服务端按 (user_id, event_id) 去重",
           "type": "string"
         },
         "type": {
@@ -115,7 +115,7 @@
           "description": "ISO 时间戳，引擎以事件时间为准（可复现回放）"
         },
         "event_id": {
-          "description": "客户端幂等键：重试必须携带同一 event_id，服务端按它去重",
+          "description": "客户端生成的幂等键；重试必须复用同一 event_id，服务端按 (user_id, event_id) 去重",
           "type": "string"
         },
         "type": {
@@ -162,7 +162,7 @@
           "description": "ISO 时间戳，引擎以事件时间为准（可复现回放）"
         },
         "event_id": {
-          "description": "客户端幂等键：重试必须携带同一 event_id，服务端按它去重",
+          "description": "客户端生成的幂等键；重试必须复用同一 event_id，服务端按 (user_id, event_id) 去重",
           "type": "string"
         },
         "type": {
@@ -196,7 +196,7 @@
           "description": "ISO 时间戳，引擎以事件时间为准（可复现回放）"
         },
         "event_id": {
-          "description": "客户端幂等键：重试必须携带同一 event_id，服务端按它去重",
+          "description": "客户端生成的幂等键；重试必须复用同一 event_id，服务端按 (user_id, event_id) 去重",
           "type": "string"
         },
         "type": {
@@ -248,7 +248,7 @@
           "description": "ISO 时间戳，引擎以事件时间为准（可复现回放）"
         },
         "event_id": {
-          "description": "客户端幂等键：重试必须携带同一 event_id，服务端按它去重",
+          "description": "客户端生成的幂等键；重试必须复用同一 event_id，服务端按 (user_id, event_id) 去重",
           "type": "string"
         },
         "type": {
@@ -300,7 +300,7 @@
           "description": "ISO 时间戳，引擎以事件时间为准（可复现回放）"
         },
         "event_id": {
-          "description": "客户端幂等键：重试必须携带同一 event_id，服务端按它去重",
+          "description": "客户端生成的幂等键；重试必须复用同一 event_id，服务端按 (user_id, event_id) 去重",
           "type": "string"
         },
         "type": {

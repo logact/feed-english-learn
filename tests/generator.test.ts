@@ -187,7 +187,7 @@ describe("generator loop", () => {
     expect(result.report.length_words).toBeGreaterThanOrEqual(300);
     expect(result.report.length_words).toBeLessThanOrEqual(500);
 
-    expect(storage.getMaterial("m-gen-1")?.text).toBe(result.material.text);
+    expect(storage.getMaterial(userId, "m-gen-1")?.text).toBe(result.material.text);
     const journal = storage.listJournal(userId).filter((j) => j.scale === "generate");
     expect(journal.length).toBe(1);
     expect(journal[0].promptVersion).toBe("generate_material@v1");
@@ -274,7 +274,7 @@ describe("generator loop", () => {
     expect(result.turns).toBe(4);
     expect(result.report.pass).toBe(false);
     expect(result.warnings.length).toBeGreaterThan(0);
-    expect(storage.getMaterial("m-fb")).not.toBeNull(); // best-effort 仍落库
+    expect(storage.getMaterial(userId, "m-fb")).not.toBeNull(); // best-effort 仍落库
   });
 
   it("check_draft 的合格草稿无需 submit 即被验收", async () => {
@@ -283,7 +283,7 @@ describe("generator loop", () => {
     const result = await engine.generateMaterial(userId, { now: NOW, materialId: "m-cd" });
     expect(result.turns).toBe(1);
     expect(result.report.pass).toBe(true);
-    expect(storage.getMaterial("m-cd")?.text).toBe(knownText(300));
+    expect(storage.getMaterial(userId, "m-cd")?.text).toBe(knownText(300));
   });
 
   it("只有 check_draft 且无合格草稿：兜底返回 best-effort 而非抛错", async () => {
@@ -294,7 +294,7 @@ describe("generator loop", () => {
     expect(result.turns).toBe(3);
     expect(result.report.pass).toBe(false);
     expect(result.warnings.length).toBeGreaterThan(0);
-    expect(storage.getMaterial("m-cdb")).not.toBeNull();
+    expect(storage.getMaterial(userId, "m-cdb")).not.toBeNull();
   });
 
   it("全程无任何草稿：抛 GeneratorError 且 journal 记录失败轨迹", async () => {
