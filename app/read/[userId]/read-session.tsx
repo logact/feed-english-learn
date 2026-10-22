@@ -77,7 +77,14 @@ export default function ReadSession({
     setSelection(null);
     try {
       const res = await fetch(`/api/users/${userId}/materials`, { method: "POST" });
-      if (!res.ok) throw new Error(`生成失败 (${res.status})`);
+      if (!res.ok) {
+        // 服务端会在 429/409 时给出具体文案（冷却期/配额/并发），优先展示
+        const message = await res
+          .json()
+          .then((body) => (typeof body?.error === "string" ? body.error : null))
+          .catch(() => null);
+        throw new Error(message ?? `生成失败 (${res.status})`);
+      }
       const gm = (await res.json()) as GeneratedMaterial;
       const sid = createSessionId();
       setSessionId(sid);
