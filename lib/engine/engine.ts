@@ -26,6 +26,7 @@ import {
 } from "./generator";
 import { createStorage, dedupKeyOf, getDefaultStorage, type Storage } from "./storage";
 import { createLLMClient, type LLMClient } from "./llm";
+import { withTokenQuota, TokenQuotaExceededError } from "./quota";
 
 export interface EngineOptions {
   storage?: Storage;
@@ -157,23 +158,31 @@ export function createEngine(opts: EngineOptions = {}): Engine {
       // 任一步失败整体回滚 → 路由 500 → 客户端带同一 event_id 重试是安全的
       const now = ev.ts;
       const exposureWrites = planExposures(ev.user_id, ev.session_id, now);
-      const { writes } = await computeSessionUpdate(
-        storage,
-        llm,
-        ev.user_id,
-        ev.session_id,
-        { now, extraChanges: exposureWrites.knowledgeChanges },
-        tuning,
-      );
+      let updateWrites: PendingWrites | null;
+      try {
+        ({ writes: updateWrites } = await computeSessionUpdate(
+          storage,
+          withTokenQuota(llm, storage, ev.user_id),
+          ev.user_id,
+          ev.session_id,
+          { now, extraChanges: exposureWrites.knowledgeChanges },
+          tuning,
+        ));
+      } catch (e) {
+        // token 超限只跳过画像更新：事件与曝光记账照常落库，阅读流程不受影响
+        if (!(e instanceof TokenQuotaExceededError)) throw e;
+        console.warn(`[quota] ${e.message}，跳过本次画像更新`);
+        updateWrites = null;
+      }
       let applied = false;
       storage.transaction(() => {
         // insertEvent 返回 false = 幂等键冲突（await 期间可能已被并发请求落库）
         if (!storage.insertEvent(ev)) return;
         applyPendingWrites(storage, exposureWrites);
-        applyPendingWrites(storage, writes);
+        if (updateWrites) applyPendingWrites(storage, updateWrites);
         applied = true;
       });
-      return { duplicate: !applied, sessionUpdated: applied };
+      return { duplicate: !applied, sessionUpdated: applied && updateWrites !== null };
     }
 
     let applied = false;
@@ -277,7 +286,7 @@ export function createEngine(opts: EngineOptions = {}): Engine {
     },
 
     generateMaterial(userId, opts = {}) {
-      return runGenerateMaterial({ storage, llm, userId }, opts);
+      return runGenerateMaterial({ storage, llm: withTokenQuota(llm, storage, userId), userId }, opts);
     },
 
     async replay(userId) {

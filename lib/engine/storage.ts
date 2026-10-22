@@ -183,6 +183,8 @@ export interface Storage {
 
   insertJournal(entry: Omit<JournalEntry, "id">): void;
   listJournal(userId: string): JournalEntry[];
+  /** 汇总 update_journal.usage(prompt + completion);userId 为 null 时跨用户合计 */
+  sumTokensSince(userId: string | null, sinceIso: string): number;
   lastJournalTs(userId: string, scale: string): string | null;
   countJournalSince(userId: string, scale: string, sinceIso: string): number;
 
@@ -526,6 +528,24 @@ export function createStorage(dbPath: string = DEFAULT_DB_PATH): Storage {
           usage: r.usage ? (JSON.parse(r.usage) as JournalEntry["usage"]) : null,
           createdAt: r.createdAt,
         }));
+    },
+
+    sumTokensSince(userId, sinceIso) {
+      const cond = userId
+        ? and(eq(schema.updateJournal.userId, userId), gte(schema.updateJournal.createdAt, sinceIso))
+        : gte(schema.updateJournal.createdAt, sinceIso);
+      const rows = db
+        .select({ usage: schema.updateJournal.usage })
+        .from(schema.updateJournal)
+        .where(cond)
+        .all();
+      let total = 0;
+      for (const r of rows) {
+        if (!r.usage) continue;
+        const u = JSON.parse(r.usage) as { promptTokens?: number; completionTokens?: number };
+        total += (u.promptTokens ?? 0) + (u.completionTokens ?? 0);
+      }
+      return total;
     },
 
     // createdAt 为 ISO 字符串，字典序即时间序

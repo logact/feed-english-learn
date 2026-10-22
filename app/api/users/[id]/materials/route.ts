@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, connection } from "next/server";
 import { createEngine } from "@/lib/engine/engine";
+import { TokenQuotaExceededError } from "@/lib/engine/quota";
 import { getCurrentAccount } from "@/lib/session";
 import { acquireGenerationLock, checkGenerationQuota } from "@/lib/generation-guard";
 import { getDefaultStorage } from "@/lib/engine/storage";
@@ -37,6 +38,11 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     const engine = createEngine();
     const material = await engine.generateMaterial(id);
     return NextResponse.json(material);
+  } catch (e) {
+    if (e instanceof TokenQuotaExceededError) {
+      return NextResponse.json({ error: "今日生成额度已用完,明天再来吧" }, { status: 429 });
+    }
+    throw e;
   } finally {
     release();
   }
