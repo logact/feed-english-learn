@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, connection } from "next/server";
 import { createEngine } from "@/lib/engine/engine";
+import { TokenQuotaExceededError } from "@/lib/engine/quota";
 import { getCurrentAccount } from "@/lib/session";
 
 // 材料生成引擎：按需生成一篇新材料（同步；agentic loop 可能含多轮 LLM 调用）
@@ -15,6 +16,13 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const engine = createEngine();
-  const material = await engine.generateMaterial(id);
-  return NextResponse.json(material);
+  try {
+    const material = await engine.generateMaterial(id);
+    return NextResponse.json(material);
+  } catch (e) {
+    if (e instanceof TokenQuotaExceededError) {
+      return NextResponse.json({ error: "今日生成额度已用完,明天再来吧" }, { status: 429 });
+    }
+    throw e;
+  }
 }

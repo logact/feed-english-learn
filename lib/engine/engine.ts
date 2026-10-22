@@ -20,6 +20,7 @@ import {
 } from "./generator";
 import { createStorage, getDefaultStorage, type Storage } from "./storage";
 import { createLLMClient, type LLMClient } from "./llm";
+import { withTokenQuota, TokenQuotaExceededError } from "./quota";
 
 export interface EngineOptions {
   storage?: Storage;
@@ -151,7 +152,13 @@ export function createEngine(opts: EngineOptions = {}): Engine {
         break; // 计入事件流，由 digest 消费
       case "session_end":
         accountExposures(ev.user_id, ev.session_id, ev.ts);
-        await runSessionUpdate(storage, llm, ev.user_id, ev.session_id, tuning);
+        try {
+          await runSessionUpdate(storage, withTokenQuota(llm, storage, ev.user_id), ev.user_id, ev.session_id, tuning);
+        } catch (e) {
+          // 超限只跳过画像更新,事件已入库,阅读流程不受影响
+          if (!(e instanceof TokenQuotaExceededError)) throw e;
+          console.warn(`[quota] ${e.message},跳过本次画像更新`);
+        }
         break;
     }
   }
@@ -198,7 +205,7 @@ export function createEngine(opts: EngineOptions = {}): Engine {
     },
 
     generateMaterial(userId, opts = {}) {
-      return runGenerateMaterial({ storage, llm, userId }, opts);
+      return runGenerateMaterial({ storage, llm: withTokenQuota(llm, storage, userId), userId }, opts);
     },
 
     async replay(userId) {

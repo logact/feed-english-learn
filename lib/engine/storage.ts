@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { eq, and, desc, asc } from "drizzle-orm";
+import { eq, and, desc, asc, gte } from "drizzle-orm";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import * as schema from "./schema";
@@ -170,6 +170,8 @@ export interface Storage {
 
   insertJournal(entry: Omit<JournalEntry, "id">): void;
   listJournal(userId: string): JournalEntry[];
+  /** 汇总 update_journal.usage(prompt + completion);userId 为 null 时跨用户合计 */
+  sumTokensSince(userId: string | null, sinceIso: string): number;
 
   clearKnowledge(userId: string): void;
   wipeUser(userId: string): void;
@@ -472,6 +474,24 @@ export function createStorage(dbPath: string = DEFAULT_DB_PATH): Storage {
           usage: r.usage ? (JSON.parse(r.usage) as JournalEntry["usage"]) : null,
           createdAt: r.createdAt,
         }));
+    },
+
+    sumTokensSince(userId, sinceIso) {
+      const cond = userId
+        ? and(eq(schema.updateJournal.userId, userId), gte(schema.updateJournal.createdAt, sinceIso))
+        : gte(schema.updateJournal.createdAt, sinceIso);
+      const rows = db
+        .select({ usage: schema.updateJournal.usage })
+        .from(schema.updateJournal)
+        .where(cond)
+        .all();
+      let total = 0;
+      for (const r of rows) {
+        if (!r.usage) continue;
+        const u = JSON.parse(r.usage) as { promptTokens?: number; completionTokens?: number };
+        total += (u.promptTokens ?? 0) + (u.completionTokens ?? 0);
+      }
+      return total;
     },
 
     // 仅清空词汇账本(知识点 + 变更记录),不动事件/档案/材料/日志

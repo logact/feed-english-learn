@@ -110,7 +110,16 @@ export default function ReadSession({
     setSelection(null);
     try {
       const res = await fetch(`/api/users/${userId}/materials`, { method: "POST" });
-      if (!res.ok) throw new Error(`生成失败 (${res.status})`);
+      if (!res.ok) {
+        let message = `生成失败 (${res.status})`;
+        try {
+          const body = (await res.json()) as { error?: string };
+          if (body.error) message = body.error;
+        } catch {
+          // 响应非 JSON 时保留默认文案
+        }
+        throw new Error(message);
+      }
       const gm = (await res.json()) as GeneratedMaterial;
       const sid = createSessionId();
       setSessionId(sid);
