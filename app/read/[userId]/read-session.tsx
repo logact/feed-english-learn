@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { GeneratedMaterial } from "@/contracts/generator";
-import { createSessionId } from "@/lib/session-id";
+import { createSessionId, createEventId } from "@/lib/session-id";
 import styles from "./page.module.css";
 
 type Phase = "idle" | "generating" | "reading" | "closing" | "done" | "error";
@@ -83,11 +83,18 @@ export default function ReadSession({
 
   // 事件发送失败不阻塞阅读:重试一次后,关键事件返回 false 交由调用方处理,
   // 非关键事件进入本地队列等待重发
+  // event_id 为幂等键,随 payload 生成一次,重试/排队重发复用同一个,服务端据此去重
   async function sendEvent(
     ev: Record<string, unknown>,
     { critical = false }: { critical?: boolean } = {},
   ): Promise<boolean> {
-    const payload = { user_id: userId, session_id: sessionId, ts: now(), ...ev };
+    const payload = {
+      user_id: userId,
+      session_id: sessionId,
+      ts: now(),
+      event_id: createEventId(),
+      ...ev,
+    };
     const ok = (await postEvents(payload)) || (await postEvents(payload));
     if (!ok) {
       if (critical) return false;
@@ -111,14 +118,12 @@ export default function ReadSession({
     try {
       const res = await fetch(`/api/users/${userId}/materials`, { method: "POST" });
       if (!res.ok) {
-        let message = `生成失败 (${res.status})`;
-        try {
-          const body = (await res.json()) as { error?: string };
-          if (body.error) message = body.error;
-        } catch {
-          // 响应非 JSON 时保留默认文案
-        }
-        throw new Error(message);
+        // 服务端会在 429/409 时给出具体文案（冷却期/配额/并发），优先展示
+        const message = await res
+          .json()
+          .then((body) => (typeof body?.error === "string" ? body.error : null))
+          .catch(() => null);
+        throw new Error(message ?? `生成失败 (${res.status})`);
       }
       const gm = (await res.json()) as GeneratedMaterial;
       const sid = createSessionId();
@@ -134,6 +139,7 @@ export default function ReadSession({
           user_id: userId,
           session_id: sid,
           ts: now(),
+          event_id: createEventId(),
           type: "session_start",
           material: gm.material,
         }),

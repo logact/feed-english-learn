@@ -49,8 +49,10 @@ export async function POST(request: NextRequest) {
     weight: Math.max(0.4, Math.round((1 - i * 0.15) * 100) / 100),
     note: "onboarding 自选",
   }));
-  storage.saveProfile(profile);
-  storage.updateAccountDisplayName(account.userId, nickname);
-
+  // 建档 + 昵称原子提交：避免 profile 已建而昵称丢失后重试撞 409
+  storage.transaction(() => {
+    storage.saveProfile(profile);
+    storage.updateAccountDisplayName(account.userId, nickname);
+  });
   return NextResponse.json(profile, { status: 201 });
 }
