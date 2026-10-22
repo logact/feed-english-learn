@@ -247,7 +247,7 @@ SQLite(better-sqlite3 + drizzle),9 张表:
 | `events` | append-only 事件流(回放的事实源) |
 | `profiles` + `profile_snapshots` | 当前档案 + 每次版本历史 |
 | `knowledge_items` + `knowledge_changes` | 词汇账本 + 每个词的状态史(含触发源) |
-| `materials` | 生成的材料(含正文) |
+| `materials` | 生成的材料(含正文,按 `(user_id, material_id)` 隔离) |
 | `update_journal` | 每次 LLM 更新的完整审计 |
 | `accounts` | 规范化邮箱、用户 ID 与显示昵称 |
 | `auth_sessions` | 会话 token 哈希、归属用户与过期时间 |

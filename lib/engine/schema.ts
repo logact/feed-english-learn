@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, uniqueIndex, primaryKey } from "drizzle-orm/sqlite-core";
 
 export const events = sqliteTable(
   "events",
@@ -79,11 +79,16 @@ export const knowledgeChanges = sqliteTable(
   (t) => [index("idx_kchanges_user").on(t.userId, t.item)],
 );
 
-export const materials = sqliteTable("materials", {
-  materialId: text("material_id").primaryKey(),
-  data: text("data").notNull(), // MaterialMeta JSON
-  createdAt: text("created_at").notNull(),
-});
+export const materials = sqliteTable(
+  "materials",
+  {
+    userId: text("user_id").notNull(),
+    materialId: text("material_id").notNull(),
+    data: text("data").notNull(), // MaterialMeta JSON
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.materialId] })],
+);
 
 export const updateJournal = sqliteTable(
   "update_journal",

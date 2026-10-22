@@ -101,7 +101,7 @@ export function createEngine(opts: EngineOptions = {}): Engine {
       sessionEvents.find((e) => e.type === "material_completed" || e.type === "material_abandoned")
         ?.material_id ?? (startEv?.type === "session_start" ? startEv.material.material_id : null);
     if (!materialId) return;
-    const material = storage.getMaterial(materialId);
+    const material = storage.getMaterial(userId, materialId);
     if (!material?.text) return;
 
     const lookedUp = new Set(
@@ -127,7 +127,7 @@ export function createEngine(opts: EngineOptions = {}): Engine {
     if (!storage.insertEvent(ev)) return false;
     switch (ev.type) {
       case "session_start":
-        storage.saveMaterial(ev.material);
+        storage.saveMaterial(ev.user_id, ev.material);
         break;
       case "word_lookup":
         applyKnowledgeEvent(
