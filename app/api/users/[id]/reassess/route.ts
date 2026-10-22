@@ -73,8 +73,11 @@ export async function POST(
       `[reassess] ${now.slice(0, 10)} 自评 band=${band}(原 ${oldBand})`,
   };
 
-  if (reset_knowledge) storage.clearKnowledge(id);
-  storage.saveProfile(profile); // 同时写入 snapshot 历史
+  // 清账本 + 档案重置原子提交：避免知识已清空而档案还是旧 band
+  storage.transaction(() => {
+    if (reset_knowledge) storage.clearKnowledge(id);
+    storage.saveProfile(profile); // 同时写入 snapshot 历史
+  });
 
   return NextResponse.json(profile);
 }

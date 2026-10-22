@@ -139,13 +139,22 @@ export interface AuthSession {
 
 export type DB = BetterSQLite3Database<typeof schema>;
 
+/** 事件的幂等键：session_end 用合成键（语义上一个会话只结束一次），其余用客户端 event_id；null=不去重 */
+export function dedupKeyOf(ev: ReadingEvent): string | null {
+  return ev.type === "session_end" ? `session_end:${ev.session_id}` : (ev.event_id ?? null);
+}
+
 export interface Storage {
   db: DB;
   sqlite: Database.Database;
   close(): void;
+  /** 同步事务：fn 抛错则整体回滚（better-sqlite3 单连接，嵌套自动转 savepoint） */
+  transaction<T>(fn: () => T): T;
 
   /** 幂等写入：返回 true=新插入，false=重复事件（同 user 下同幂等键已存在） */
   insertEvent(ev: ReadingEvent): boolean;
+  /** 幂等键是否已存在（用于在昂贵的 LLM 计算前预检重复事件） */
+  hasEventId(userId: string, eventId: string): boolean;
   listEvents(userId: string): ReadingEvent[];
   listSessionEvents(userId: string, sessionId: string): ReadingEvent[];
   lastEventTs(userId: string): string | null;
@@ -220,17 +229,18 @@ export function createStorage(dbPath: string = DEFAULT_DB_PATH): Storage {
   );
   const db = drizzle(sqlite, { schema });
   const now = () => new Date().toISOString();
+  const tx = <T>(fn: () => T): T => sqlite.transaction(fn)();
 
   return {
     db,
     sqlite,
     close: () => sqlite.close(),
+    transaction: tx,
 
     insertEvent(ev) {
       // 幂等键:session_end 语义上一个会话只结束一次,始终按 (user_id, session_id) 去重
       // (即使客户端重发时生成了新 event_id);其余事件按客户端 event_id 去重,无键则不去重
-      const eventId =
-        ev.type === "session_end" ? `session_end:${ev.session_id}` : (ev.event_id ?? null);
+      const eventId = dedupKeyOf(ev);
       const res = db
         .insert(schema.events)
         .values({
@@ -245,6 +255,16 @@ export function createStorage(dbPath: string = DEFAULT_DB_PATH): Storage {
         .onConflictDoNothing({ target: [schema.events.userId, schema.events.eventId] })
         .run();
       return res.changes > 0;
+    },
+
+    hasEventId(userId, eventId) {
+      const rows = db
+        .select({ id: schema.events.id })
+        .from(schema.events)
+        .where(and(eq(schema.events.userId, userId), eq(schema.events.eventId, eventId)))
+        .limit(1)
+        .all();
+      return rows.length > 0;
     },
 
     listEvents(userId) {
@@ -284,26 +304,28 @@ export function createStorage(dbPath: string = DEFAULT_DB_PATH): Storage {
     },
 
     saveProfile(profile) {
-      db.insert(schema.profiles)
-        .values({
-          userId: profile.user_id,
-          version: profile.version,
-          data: JSON.stringify(profile),
-          updatedAt: profile.updated_at,
-        })
-        .onConflictDoUpdate({
-          target: schema.profiles.userId,
-          set: { version: profile.version, data: JSON.stringify(profile), updatedAt: profile.updated_at },
-        })
-        .run();
-      db.insert(schema.profileSnapshots)
-        .values({
-          userId: profile.user_id,
-          version: profile.version,
-          data: JSON.stringify(profile),
-          createdAt: now(),
-        })
-        .run();
+      tx(() => {
+        db.insert(schema.profiles)
+          .values({
+            userId: profile.user_id,
+            version: profile.version,
+            data: JSON.stringify(profile),
+            updatedAt: profile.updated_at,
+          })
+          .onConflictDoUpdate({
+            target: schema.profiles.userId,
+            set: { version: profile.version, data: JSON.stringify(profile), updatedAt: profile.updated_at },
+          })
+          .run();
+        db.insert(schema.profileSnapshots)
+          .values({
+            userId: profile.user_id,
+            version: profile.version,
+            data: JSON.stringify(profile),
+            createdAt: now(),
+          })
+          .run();
+      });
     },
 
     listSnapshots(userId) {
@@ -535,20 +557,24 @@ export function createStorage(dbPath: string = DEFAULT_DB_PATH): Storage {
 
     // 仅清空词汇账本(知识点 + 变更记录),不动事件/档案/材料/日志
     clearKnowledge(userId) {
-      db.delete(schema.knowledgeItems).where(eq(schema.knowledgeItems.userId, userId)).run();
-      db.delete(schema.knowledgeChanges).where(eq(schema.knowledgeChanges.userId, userId)).run();
+      tx(() => {
+        db.delete(schema.knowledgeItems).where(eq(schema.knowledgeItems.userId, userId)).run();
+        db.delete(schema.knowledgeChanges).where(eq(schema.knowledgeChanges.userId, userId)).run();
+      });
     },
 
     wipeUser(userId) {
-      db.delete(schema.events).where(eq(schema.events.userId, userId)).run();
-      db.delete(schema.profiles).where(eq(schema.profiles.userId, userId)).run();
-      db.delete(schema.profileSnapshots).where(eq(schema.profileSnapshots.userId, userId)).run();
-      db.delete(schema.knowledgeItems).where(eq(schema.knowledgeItems.userId, userId)).run();
-      db.delete(schema.knowledgeChanges).where(eq(schema.knowledgeChanges.userId, userId)).run();
-      db.delete(schema.materials).where(eq(schema.materials.userId, userId)).run();
-      db.delete(schema.updateJournal).where(eq(schema.updateJournal.userId, userId)).run();
-      db.delete(schema.authSessions).where(eq(schema.authSessions.userId, userId)).run();
-      db.delete(schema.accounts).where(eq(schema.accounts.userId, userId)).run();
+      tx(() => {
+        db.delete(schema.events).where(eq(schema.events.userId, userId)).run();
+        db.delete(schema.profiles).where(eq(schema.profiles.userId, userId)).run();
+        db.delete(schema.profileSnapshots).where(eq(schema.profileSnapshots.userId, userId)).run();
+        db.delete(schema.knowledgeItems).where(eq(schema.knowledgeItems.userId, userId)).run();
+        db.delete(schema.knowledgeChanges).where(eq(schema.knowledgeChanges.userId, userId)).run();
+        db.delete(schema.materials).where(eq(schema.materials.userId, userId)).run();
+        db.delete(schema.updateJournal).where(eq(schema.updateJournal.userId, userId)).run();
+        db.delete(schema.authSessions).where(eq(schema.authSessions.userId, userId)).run();
+        db.delete(schema.accounts).where(eq(schema.accounts.userId, userId)).run();
+      });
     },
   };
 }
