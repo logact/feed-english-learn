@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, connection } from "next/server";
 import { z } from "zod";
 import { loginWithEmail } from "@/lib/auth";
 import { getDefaultStorage } from "@/lib/engine/storage";
-import { setSessionCookie } from "@/lib/session";
+import { isSecureRequest, setSessionCookie } from "@/lib/session";
 
 const LoginSchema = z.object({
   email: z.string().trim().max(254).pipe(z.email({ error: "请输入合法的邮箱地址" })),
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
 
   const storage = getDefaultStorage();
   const result = loginWithEmail(storage, parsed.data.email);
-  await setSessionCookie(result.token, result.expiresAt);
+  await setSessionCookie(result.token, result.expiresAt, isSecureRequest(request));
 
   return NextResponse.json({
     userId: result.account.userId,

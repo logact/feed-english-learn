@@ -1,0 +1,16 @@
+/Users/logact/orca/workspaces/comprehensible-english/issue-1-login-failed/.github/workflows/deploy.yml
+/Users/logact/orca/workspaces/comprehensible-english/issue-1-login-failed/AGENTS.md
+/Users/logact/orca/workspaces/comprehensible-english/issue-1-login-failed/PRD.md
+/Users/logact/orca/workspaces/comprehensible-english/issue-1-login-failed/README.md
+/Users/logact/orca/workspaces/comprehensible-english/issue-1-login-failed/docs/how-it-works.md
+/Users/logact/orca/workspaces/comprehensible-english/issue-1-login-failed/docs/user-engine.md
+/Users/logact/orca/workspaces/comprehensible-english/issue-1-login-failed/lib/engine/prompts/generate_material.md
+/Users/logact/orca/workspaces/comprehensible-english/issue-1-login-failed/lib/engine/prompts/judge.md
+/Users/logact/orca/workspaces/comprehensible-english/issue-1-login-failed/lib/engine/prompts/predict_lookups.md
+/Users/logact/orca/workspaces/comprehensible-english/issue-1-login-failed/lib/engine/prompts/stage_review.md
+/Users/logact/orca/workspaces/comprehensible-english/issue-1-login-failed/lib/engine/prompts/update_profile.md
+/Users/logact/orca/workspaces/comprehensible-english/issue-1-login-failed/public/file.svg
+/Users/logact/orca/workspaces/comprehensible-english/issue-1-login-failed/public/globe.svg
+/Users/logact/orca/workspaces/comprehensible-english/issue-1-login-failed/public/next.svg
+/Users/logact/orca/workspaces/comprehensible-english/issue-1-login-failed/public/vercel.svg
+/Users/logact/orca/workspaces/comprehensible-english/issue-1-login-failed/public/window.svg

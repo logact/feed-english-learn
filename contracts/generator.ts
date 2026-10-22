@@ -6,9 +6,11 @@ import { MaterialMetaSchema } from "./events";
 // 驱动代码确定性执行后以 TOOL_RESULT 回传。裁决权在代码，LLM 只提议。
 // ---------------------------------------------------------------------------
 
+export const CHECK_WORDS_LIMIT = 50;
+
 export const CheckWordsTurnSchema = z.object({
   action: z.literal("check_words"),
-  words: z.array(z.string()).max(50).describe("打草稿时不确定熟悉度的候选词"),
+  words: z.array(z.string()).max(CHECK_WORDS_LIMIT).describe("打草稿时不确定熟悉度的候选词"),
 });
 
 export const CheckDraftTurnSchema = z.object({
