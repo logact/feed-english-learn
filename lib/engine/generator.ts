@@ -1,9 +1,11 @@
 // 组件 2 生成 loop 驱动：TargetSpec → 结构化回合（LLM 提议）→ 确定性体检（代码裁决）→ 落库。
 // 不依赖 Next.js，可在 tsx 脚本 / vitest 中独立使用。
+import { z } from "zod";
 import { defaultProfile } from "../../contracts/profile";
 import type { MaterialMeta } from "../../contracts/events";
 import type { ReviewItem, TargetSpec } from "../../contracts/target-spec";
 import {
+  CHECK_WORDS_LIMIT,
   GeneratorTurnSchema,
   type DraftReport,
   type GeneratedMaterial,
@@ -16,6 +18,19 @@ import type { LLMClient, LLMMessage, TokenUsage } from "./llm";
 import type { Storage } from "./storage";
 
 export const GENERATOR_MAX_TURNS = 8;
+
+const GeneratorTurnResponseSchema = z.preprocess((value) => {
+  if (typeof value !== "object" || value === null) return value;
+  const turn = value as Record<string, unknown>;
+  if (
+    turn.action !== "check_words" ||
+    !Array.isArray(turn.words) ||
+    turn.words.length <= CHECK_WORDS_LIMIT
+  ) {
+    return value;
+  }
+  return { ...turn, words: turn.words.slice(0, CHECK_WORDS_LIMIT) };
+}, GeneratorTurnSchema);
 
 // ---------------------------------------------------------------------------
 // TargetSpec 组装（自 engine.ts 迁入的纯函数；engine.getTargetSpec 委托到此）
@@ -169,7 +184,7 @@ export async function generateMaterial(
     turns = t;
     const result = await llm.complete({
       schemaName: "GeneratorTurn",
-      schema: GeneratorTurnSchema,
+      schema: GeneratorTurnResponseSchema,
       messages,
     });
     lastRaw = result.raw;

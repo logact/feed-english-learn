@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { createStorage, type Storage } from "../lib/engine/storage";
 import {
   MockLLMClient,
+  OpenAICompatibleClient,
   type LLMClient,
   type LLMRequest,
   type LLMResult,
@@ -190,6 +191,42 @@ describe("generator loop", () => {
     const journal = storage.listJournal(userId).filter((j) => j.scale === "generate");
     expect(journal.length).toBe(1);
     expect(journal[0].promptVersion).toBe("generate_material@v1");
+  });
+
+  it("check_words 超限时截取前 50 个并继续生成", async () => {
+    const good: GeneratorTurn = {
+      action: "submit",
+      text: knownText(300),
+      summary: "good",
+      topics: ["tech"],
+      new_items: [],
+    };
+    const words = Array.from({ length: 53 }, (_, i) => `word${1000 + i}`);
+    let calls = 0;
+    const llm = new OpenAICompatibleClient({
+      model: "test",
+      transport: async ({ messages }) => {
+        calls += 1;
+        if (calls === 2) {
+          const toolResult = messages.find((m) => m.content.startsWith("TOOL_RESULT check_words:"));
+          expect(toolResult?.content).toContain("word1049=");
+          expect(toolResult?.content).not.toContain("word1050=");
+        }
+        return {
+          content:
+            calls === 1
+              ? JSON.stringify({ action: "check_words", words })
+              : JSON.stringify(good),
+          usage: null,
+        };
+      },
+    });
+    const engine: Engine = createEngine({ storage, llm });
+    const result = await engine.generateMaterial(userId, { now: NOW, materialId: "m-long-check" });
+
+    expect(result.turns).toBe(2);
+    expect(result.material.text).toBe(good.text);
+    expect(calls).toBe(2);
   });
 
   it("supported 旧词进入 review_items 并被 Mock 织入", async () => {
