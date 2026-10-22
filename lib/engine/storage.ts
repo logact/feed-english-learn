@@ -69,9 +69,11 @@ CREATE TABLE IF NOT EXISTS knowledge_changes (
 );
 CREATE INDEX IF NOT EXISTS idx_kchanges_user ON knowledge_changes(user_id, item);
 CREATE TABLE IF NOT EXISTS materials (
-  material_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  material_id TEXT NOT NULL,
   data TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, material_id)
 );
 CREATE TABLE IF NOT EXISTS update_journal (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,8 +167,8 @@ export interface Storage {
   insertKnowledgeChange(change: KnowledgeChange): void;
   listKnowledgeChanges(userId: string, item?: string): KnowledgeChange[];
 
-  saveMaterial(meta: MaterialMeta): void;
-  getMaterial(materialId: string): MaterialMeta | null;
+  saveMaterial(userId: string, meta: MaterialMeta): void;
+  getMaterial(userId: string, materialId: string): MaterialMeta | null;
 
   insertJournal(entry: Omit<JournalEntry, "id">): void;
   listJournal(userId: string): JournalEntry[];
@@ -198,6 +200,11 @@ export function createStorage(dbPath: string = DEFAULT_DB_PATH): Storage {
   }
   const sqlite = new Database(dbPath);
   sqlite.pragma("journal_mode = WAL");
+  // materials 旧表无 user_id（材料为可再生内容，直接重建）
+  const materialCols = sqlite.prepare("PRAGMA table_info(materials)").all() as { name: string }[];
+  if (materialCols.length > 0 && !materialCols.some((c) => c.name === "user_id")) {
+    sqlite.exec("DROP TABLE materials");
+  }
   sqlite.exec(DDL);
   const db = drizzle(sqlite, { schema });
   const now = () => new Date().toISOString();
@@ -418,21 +425,26 @@ export function createStorage(dbPath: string = DEFAULT_DB_PATH): Storage {
         }));
     },
 
-    saveMaterial(meta) {
+    saveMaterial(userId, meta) {
       db.insert(schema.materials)
-        .values({ materialId: meta.material_id, data: JSON.stringify(meta), createdAt: now() })
+        .values({
+          userId,
+          materialId: meta.material_id,
+          data: JSON.stringify(meta),
+          createdAt: now(),
+        })
         .onConflictDoUpdate({
-          target: schema.materials.materialId,
+          target: [schema.materials.userId, schema.materials.materialId],
           set: { data: JSON.stringify(meta) },
         })
         .run();
     },
 
-    getMaterial(materialId) {
+    getMaterial(userId, materialId) {
       const rows = db
         .select()
         .from(schema.materials)
-        .where(eq(schema.materials.materialId, materialId))
+        .where(and(eq(schema.materials.userId, userId), eq(schema.materials.materialId, materialId)))
         .all();
       return rows[0] ? (JSON.parse(rows[0].data) as MaterialMeta) : null;
     },
@@ -486,6 +498,7 @@ export function createStorage(dbPath: string = DEFAULT_DB_PATH): Storage {
       db.delete(schema.profileSnapshots).where(eq(schema.profileSnapshots.userId, userId)).run();
       db.delete(schema.knowledgeItems).where(eq(schema.knowledgeItems.userId, userId)).run();
       db.delete(schema.knowledgeChanges).where(eq(schema.knowledgeChanges.userId, userId)).run();
+      db.delete(schema.materials).where(eq(schema.materials.userId, userId)).run();
       db.delete(schema.updateJournal).where(eq(schema.updateJournal.userId, userId)).run();
       db.delete(schema.authSessions).where(eq(schema.authSessions.userId, userId)).run();
       db.delete(schema.accounts).where(eq(schema.accounts.userId, userId)).run();
