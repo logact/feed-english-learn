@@ -295,6 +295,7 @@ export async function computeSessionUpdate(
     schemaName: "ProfileSessionUpdate",
     schema: ProfileSessionUpdateSchema,
     messages,
+    trace: { userId, sessionId, scale: "session", promptVersion: PROMPT_VERSIONS.session },
   });
 
   const { profile: updated, delta } = applySessionUpdate(profile, result.data, now, tuning);
@@ -443,6 +444,7 @@ export async function computeStageReview(
     schemaName: "StageReviewOutput",
     schema: StageReviewOutputSchema,
     messages,
+    trace: { userId, scale: "stage_review", promptVersion: PROMPT_VERSIONS.stage },
   });
 
   const { profile: updated, delta } = applyStageReview(profile, result.data, gate, now);

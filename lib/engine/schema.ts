@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index, uniqueIndex, primaryKey } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from "drizzle-orm/sqlite-core";
 
 export const events = sqliteTable(
   "events",
@@ -105,6 +105,34 @@ export const updateJournal = sqliteTable(
     createdAt: text("created_at").notNull(),
   },
   (t) => [index("idx_journal_user").on(t.userId, t.id)],
+);
+
+export const llmCalls = sqliteTable(
+  "llm_calls",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: text("user_id"), // 可空：sim/eval 无用户上下文
+    sessionId: text("session_id"), // 可空：stage_review / generate 无会话
+    scale: text("scale").notNull(), // 'session' | 'stage_review' | 'generate' | 'predict'
+    schemaName: text("schema_name").notNull(), // 逻辑契约名（ProfileSessionUpdate 等）
+    promptVersion: text("prompt_version"),
+    turn: integer("turn"), // 生成器回合号，其他为 null
+    model: text("model").notNull(),
+    messages: text("messages").notNull(), // 完整输入 messages JSON
+    rawResponse: text("raw_response"), // 错误时 null
+    status: text("status").notNull(), // 'ok' | 'error'
+    error: text("error"),
+    attempts: integer("attempts"),
+    promptTokens: integer("prompt_tokens"),
+    completionTokens: integer("completion_tokens"),
+    latencyMs: integer("latency_ms").notNull(),
+    costUsd: real("cost_usd"), // token 数 × 单价表估算，未知模型为 null
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [
+    index("idx_llm_calls_user").on(t.userId, t.id),
+    index("idx_llm_calls_session").on(t.sessionId),
+  ],
 );
 
 export const accounts = sqliteTable(

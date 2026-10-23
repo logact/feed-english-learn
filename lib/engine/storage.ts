@@ -89,6 +89,28 @@ CREATE TABLE IF NOT EXISTS update_journal (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_journal_user ON update_journal(user_id, id);
+CREATE TABLE IF NOT EXISTS llm_calls (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT,
+  session_id TEXT,
+  scale TEXT NOT NULL,
+  schema_name TEXT NOT NULL,
+  prompt_version TEXT,
+  turn INTEGER,
+  model TEXT NOT NULL,
+  messages TEXT NOT NULL,
+  raw_response TEXT,
+  status TEXT NOT NULL,
+  error TEXT,
+  attempts INTEGER,
+  prompt_tokens INTEGER,
+  completion_tokens INTEGER,
+  latency_ms INTEGER NOT NULL,
+  cost_usd REAL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_llm_calls_user ON llm_calls(user_id, id);
+CREATE INDEX IF NOT EXISTS idx_llm_calls_session ON llm_calls(session_id);
 CREATE TABLE IF NOT EXISTS accounts (
   user_id TEXT PRIMARY KEY,
   email TEXT NOT NULL,
@@ -115,6 +137,28 @@ export interface JournalEntry {
   rawResponse: string;
   delta: Record<string, unknown>;
   usage: { promptTokens?: number; completionTokens?: number } | null;
+  createdAt: string;
+}
+
+export interface LLMCallRecord {
+  id: number;
+  userId: string | null;
+  sessionId: string | null;
+  scale: string;
+  schemaName: string;
+  promptVersion: string | null;
+  turn: number | null;
+  model: string;
+  /** 完整输入 messages JSON 字符串 */
+  messages: string;
+  rawResponse: string | null;
+  status: string; // 'ok' | 'error'
+  error: string | null;
+  attempts: number | null;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  latencyMs: number;
+  costUsd: number | null;
   createdAt: string;
 }
 
@@ -187,6 +231,9 @@ export interface Storage {
   sumTokensSince(userId: string | null, sinceIso: string): number;
   lastJournalTs(userId: string, scale: string): string | null;
   countJournalSince(userId: string, scale: string, sinceIso: string): number;
+
+  insertLLMCall(record: Omit<LLMCallRecord, "id">): void;
+  listLLMCalls(userId: string, limit?: number): LLMCallRecord[];
 
   clearKnowledge(userId: string): void;
   wipeUser(userId: string): void;
@@ -530,6 +577,61 @@ export function createStorage(dbPath: string = DEFAULT_DB_PATH): Storage {
         }));
     },
 
+    insertLLMCall(record) {
+      db.insert(schema.llmCalls)
+        .values({
+          userId: record.userId,
+          sessionId: record.sessionId,
+          scale: record.scale,
+          schemaName: record.schemaName,
+          promptVersion: record.promptVersion,
+          turn: record.turn,
+          model: record.model,
+          messages: record.messages,
+          rawResponse: record.rawResponse,
+          status: record.status,
+          error: record.error,
+          attempts: record.attempts,
+          promptTokens: record.promptTokens,
+          completionTokens: record.completionTokens,
+          latencyMs: record.latencyMs,
+          costUsd: record.costUsd,
+          createdAt: record.createdAt,
+        })
+        .run();
+    },
+
+    listLLMCalls(userId, limit) {
+      const rows = db
+        .select()
+        .from(schema.llmCalls)
+        .where(eq(schema.llmCalls.userId, userId))
+        .orderBy(asc(schema.llmCalls.id))
+        .all();
+      const records: LLMCallRecord[] = rows.map((r) => ({
+        id: r.id,
+        userId: r.userId,
+        sessionId: r.sessionId,
+        scale: r.scale,
+        schemaName: r.schemaName,
+        promptVersion: r.promptVersion,
+        turn: r.turn,
+        model: r.model,
+        messages: r.messages,
+        rawResponse: r.rawResponse,
+        status: r.status,
+        error: r.error,
+        attempts: r.attempts,
+        promptTokens: r.promptTokens,
+        completionTokens: r.completionTokens,
+        latencyMs: r.latencyMs,
+        costUsd: r.costUsd,
+        createdAt: r.createdAt,
+      }));
+      // limit 取最近 N 条（保持时间升序返回）
+      return limit !== undefined ? records.slice(-limit) : records;
+    },
+
     sumTokensSince(userId, sinceIso) {
       const cond = userId
         ? and(eq(schema.updateJournal.userId, userId), gte(schema.updateJournal.createdAt, sinceIso))
@@ -592,6 +694,7 @@ export function createStorage(dbPath: string = DEFAULT_DB_PATH): Storage {
         db.delete(schema.knowledgeChanges).where(eq(schema.knowledgeChanges.userId, userId)).run();
         db.delete(schema.materials).where(eq(schema.materials.userId, userId)).run();
         db.delete(schema.updateJournal).where(eq(schema.updateJournal.userId, userId)).run();
+        db.delete(schema.llmCalls).where(eq(schema.llmCalls.userId, userId)).run();
         db.delete(schema.authSessions).where(eq(schema.authSessions.userId, userId)).run();
         db.delete(schema.accounts).where(eq(schema.accounts.userId, userId)).run();
       });
