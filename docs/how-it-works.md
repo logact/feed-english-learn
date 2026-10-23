@@ -247,7 +247,7 @@ export interface LLMClient {
 
 ### 9.2 日志 `lib/logger.ts`
 
-pino，stdout + 文件双写（`LOG_FILE`，默认 `data/app.log`），级别由 `LOG_LEVEL` 控制（默认 info）。LLM 调用单独再落一份 JSONL（`LLM_LOG_FILE`，默认 `data/llm-calls.jsonl`），便于采集。单例挂 `globalThis`（HMR 安全，同 `getDefaultStorage` 模式），不用 pino transport（worker thread 与 Next bundling 有坑），文件写走 `pino.destination()`。不依赖 Next.js，sim 脚本同样可用。两个触发 LLM 的 API 路由（events / materials）用 child logger 记录请求开始/结束/错误，与 `llm_calls` 可通过 user_id + 时间窗关联。
+pino，stdout + 文件双写（`LOG_FILE`，默认 `data/app.log`），级别由 `LOG_LEVEL` 控制（默认 info）。LLM 调用单独再落一份 JSONL（`LLM_LOG_FILE`，默认 `data/llm-calls.jsonl`），便于采集。单例挂 `globalThis`（HMR 安全，同 `getDefaultStorage` 模式），不用 pino transport（worker thread 与 Next bundling 有坑），文件写走 `rotating-file-stream`（纯 Node Writable）：按天轮转为 `app-2026-10-23.log` 形式，保留 30 天。生产上 `ecosystem.config.js` 把路径固定到 `/var/lib/comprehensible-english/logs/`（发版不清；部署脚本会先把旧版本写在 `$APP_DIR/data/` 的日志迁入该目录），PM2 stdout 日志由 pm2-logrotate 每日轮转。不依赖 Next.js，sim 脚本同样可用。两个触发 LLM 的 API 路由（events / materials）用 child logger 记录请求开始/结束/错误，与 `llm_calls` 可通过 user_id + 时间窗关联。
 
 ## 10. 存储 `lib/engine/storage.ts`
 

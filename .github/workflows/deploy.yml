@@ -129,6 +129,11 @@ jobs:
             echo "::warning::LLM_API_KEY secret is not set — leaving any existing env file untouched; the app will use its mock LLM client."
           fi
           mkdir -p "$APP_DIR"
+          LOG_DIR="$DATA_DIR/logs"
+          mkdir -p "$LOG_DIR"
+          # 旧版本日志写在 $APP_DIR/data/ 下，删除前迁入持久目录（不带日期的存量文件，rfs 不会管理）
+          [ -f "$APP_DIR/data/app.log" ] && cat "$APP_DIR/data/app.log" >> "$LOG_DIR/app.log" || true
+          [ -f "$APP_DIR/data/llm-calls.jsonl" ] && cat "$APP_DIR/data/llm-calls.jsonl" >> "$LOG_DIR/llm-calls.jsonl" || true
           find "$APP_DIR" -mindepth 1 -delete
           tar xzf /tmp/comprehensible-english-release.tar.gz -C "$APP_DIR"
           rm -f /tmp/comprehensible-english-release.tar.gz
@@ -136,6 +141,13 @@ jobs:
           pm2 delete comprehensible-english > /dev/null 2>&1 || true
           pm2 start ecosystem.config.js
           pm2 save
+          # PM2 stdout 日志每日轮转（幂等，每次部署刷新配置）
+          pm2 install pm2-logrotate || true
+          pm2 set pm2-logrotate:rotateInterval '0 0 * * *'
+          pm2 set pm2-logrotate:retain 30
+          pm2 set pm2-logrotate:compress true
+          pm2 set pm2-logrotate:dateFormat 'YYYY-MM-DD'
+          pm2 set pm2-logrotate:max_size 100M
           healthy=""
           for i in $(seq 1 30); do
             if curl -sf "http://localhost:${APP_PORT}/" > /dev/null 2>&1; then

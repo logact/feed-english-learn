@@ -32,8 +32,8 @@
 pino（`lib/logger.ts`）：stdout + 文件双写，LLM 调用单独再落一份 JSONL。`createEngine()` 用 `withLLMTracing`（`lib/engine/llm-trace.ts`）在 `complete()` 层统一包装，每次调用双写 `llm_calls` 表 + 日志文件，日志/落库失败不影响主流程。相关 env：
 
 - `LOG_LEVEL`（默认 `info`）
-- `LOG_FILE`（默认 `data/app.log`）
-- `LLM_LOG_FILE`（默认 `data/llm-calls.jsonl`）
+- `LOG_FILE`（默认 `data/app.log`；实际按天轮转为 `app-2026-10-23.log` 形式，保留 30 天。生产由 `ecosystem.config.js` 固定为 `/var/lib/comprehensible-english/logs/app.log`）
+- `LLM_LOG_FILE`（默认 `data/llm-calls.jsonl`；同样按天轮转，生产固定为 `/var/lib/comprehensible-english/logs/llm-calls.jsonl`）
 - `LLM_PRICE_INPUT_PER_MTOK` / `LLM_PRICE_OUTPUT_PER_MTOK`：单价覆盖（美元/1M token），供内置价格表之外的自建端点模型估算成本
 
 ## 邮箱登录
